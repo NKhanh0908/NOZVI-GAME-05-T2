@@ -25,10 +25,80 @@ export const EmployeeState = schema(
 );
 export type EmployeeState = SchemaType<typeof EmployeeState>;
 
+/** The only video provider in Phase 4 (REQ-TV-007 keeps the field for later providers). */
+export const TV_PROVIDERS = ['youtube'] as const;
+export type TvProvider = (typeof TV_PROVIDERS)[number];
+export const TV_STATUSES = ['idle', 'playing', 'paused'] as const;
+export type TvStatus = (typeof TV_STATUSES)[number];
+
+/**
+ * `t.string()` has no nullable variant. The server writes `null`; Colyseus sends that as a
+ * field delete, so a decoded field reads `undefined`. Clients read through `readTv`.
+ */
+const NULL_STRING = null as unknown as string;
+
+/**
+ * REQ-TV-004: the shared wall TV. Times are float64 so every client derives the same
+ * playback position. `currentTime` is seconds of video time at `updatedAt`, and
+ * `updatedAt` is server epoch milliseconds (DECISIONS: TV timing convention).
+ */
+export const SharedTVState = schema(
+  {
+    /** Null when the TV is idle. */
+    videoId: t.string().default(NULL_STRING),
+    /** A `TvProvider` value. */
+    provider: t.string().default('youtube'),
+    /** A `TvStatus` value. */
+    status: t.string().default('idle'),
+    currentTime: t.float64().default(0),
+    updatedAt: t.float64().default(0),
+    /** Session that sent the last command; null when idle or after that session left. */
+    controllerSessionId: t.string().default(NULL_STRING),
+  },
+  'SharedTVState',
+);
+export type SharedTVState = Omit<
+  SchemaType<typeof SharedTVState>,
+  'videoId' | 'controllerSessionId'
+> & { videoId: string | null; controllerSessionId: string | null };
+
+/** Plain snapshot of the TV with `null` for absent ids and narrowed enum fields. */
+export type TvSnapshot = {
+  videoId: string | null;
+  provider: TvProvider;
+  status: TvStatus;
+  currentTime: number;
+  updatedAt: number;
+  controllerSessionId: string | null;
+};
+
+/** REQ-TV-004: normalizes server or decoded TV state (undefined ids become null). */
+export function readTv(tv: {
+  videoId?: string | null;
+  provider: string;
+  status: string;
+  currentTime: number;
+  updatedAt: number;
+  controllerSessionId?: string | null;
+}): TvSnapshot {
+  const status = (TV_STATUSES as readonly string[]).includes(tv.status)
+    ? (tv.status as TvStatus)
+    : 'idle';
+  return {
+    videoId: tv.videoId ?? null,
+    provider: 'youtube',
+    status,
+    currentTime: tv.currentTime,
+    updatedAt: tv.updatedAt,
+    controllerSessionId: tv.controllerSessionId ?? null,
+  };
+}
+
 /** Room state; employees are keyed by Colyseus sessionId. */
 export const OfficeState = schema(
   {
     employees: t.map(EmployeeState),
+    tv: SharedTVState,
   },
   'OfficeState',
 );

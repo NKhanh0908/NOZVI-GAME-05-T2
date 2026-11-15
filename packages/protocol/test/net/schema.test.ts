@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Decoder, Encoder } from '@colyseus/schema';
-import { EmployeeState, OfficeState } from '../../src/net/schema';
+import { EmployeeState, OfficeState, readTv } from '../../src/net/schema';
 
 describe('net schema', () => {
   it('has the documented defaults', () => {
@@ -32,5 +32,61 @@ describe('net schema', () => {
     expect(d.heading).toBe(Math.PI / 3);
     expect(d.lastSeq).toBe(42);
     expect(d.connected).toBe(true);
+  });
+});
+
+describe('SharedTVState (REQ-TV-004)', () => {
+  it('defaults to idle with null video and controller', () => {
+    const state = new OfficeState();
+    expect(readTv(state.tv)).toEqual({
+      videoId: null,
+      provider: 'youtube',
+      status: 'idle',
+      currentTime: 0,
+      updatedAt: 0,
+      controllerSessionId: null,
+    });
+  });
+  it('replicates all six fields through an encode/decode round trip, including a clear', () => {
+    const state = new OfficeState();
+    Object.assign(state.tv, {
+      videoId: 'dQw4w9WgXcQ',
+      status: 'paused',
+      currentTime: 12.345678901234,
+      updatedAt: 1_794_000_000_123.5,
+      controllerSessionId: 'sess-A',
+    });
+    const encoder = new Encoder(state);
+    const decoded = new OfficeState();
+    const decoder = new Decoder(decoded);
+    decoder.decode(encoder.encodeAll());
+    encoder.discardChanges();
+    expect(readTv(decoded.tv)).toEqual({
+      videoId: 'dQw4w9WgXcQ',
+      provider: 'youtube',
+      status: 'paused',
+      currentTime: 12.345678901234,
+      updatedAt: 1_794_000_000_123.5,
+      controllerSessionId: 'sess-A',
+    });
+
+    Object.assign(state.tv, {
+      videoId: null,
+      status: 'idle',
+      currentTime: 0,
+      controllerSessionId: null,
+    });
+    decoder.decode(encoder.encode());
+    expect(readTv(decoded.tv)).toMatchObject({
+      videoId: null,
+      status: 'idle',
+      currentTime: 0,
+      controllerSessionId: null,
+    });
+  });
+  it('readTv maps an unknown status to idle', () => {
+    expect(readTv({ provider: 'youtube', status: 'x', currentTime: 1, updatedAt: 2 }).status).toBe(
+      'idle',
+    );
   });
 });

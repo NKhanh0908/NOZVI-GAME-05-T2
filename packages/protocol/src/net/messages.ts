@@ -3,7 +3,7 @@ import { officeLayout } from '../layout/layout';
 import { PROTOCOL_VERSION } from '../version';
 
 /** Client to server message names. */
-export const MSG = { input: 'input', intent: 'intent' } as const;
+export const MSG = { input: 'input', intent: 'intent', tv: 'tv' } as const;
 
 /** Largest sequence number (stored as uint32 in `EmployeeState.lastSeq`). */
 export const MAX_SEQ = 0xffff_ffff;
@@ -109,4 +109,36 @@ export function parseJoinOptions(raw: unknown): JoinResult {
     ok: true,
     value: { name, officeCode, avatarId: raw.avatarId, protocolVersion: PROTOCOL_VERSION },
   };
+}
+
+export const TV_COMMAND_TYPES = ['load', 'play', 'pause', 'seek', 'stop'] as const;
+export type TvCommandType = (typeof TV_COMMAND_TYPES)[number];
+/** REQ-TV-005: client to server `tv` message. A local close sends nothing. */
+export type TvCommand =
+  | { type: 'load'; videoId: string }
+  | { type: 'seek'; time: number }
+  | { type: Exclude<TvCommandType, 'load' | 'seek'> };
+
+/** YouTube video ids are 11 characters of `[A-Za-z0-9_-]`. */
+export const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+export function isYouTubeId(v: unknown): v is string {
+  return typeof v === 'string' && YOUTUBE_ID_PATTERN.test(v);
+}
+
+/** REQ-NFR-004, REQ-TV-005: returns a clean copy of a valid `tv` payload, or null. */
+export function parseTvCommand(raw: unknown): TvCommand | null {
+  if (!isRecord(raw)) return null;
+  const { type, videoId, time } = raw;
+  if (typeof type !== 'string' || !(TV_COMMAND_TYPES as readonly string[]).includes(type)) {
+    return null;
+  }
+  if (type === 'load') {
+    return isYouTubeId(videoId) && time === undefined ? { type, videoId } : null;
+  }
+  if (type === 'seek') {
+    const ok = typeof time === 'number' && Number.isFinite(time) && time >= 0;
+    return ok && videoId === undefined ? { type, time } : null;
+  }
+  if (videoId !== undefined || time !== undefined) return null;
+  return { type: type as Exclude<TvCommandType, 'load' | 'seek'> };
 }
