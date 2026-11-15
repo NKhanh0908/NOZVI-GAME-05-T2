@@ -25,7 +25,7 @@ Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTU
 
 1. Owner: review and merge `feat/T-1041-verification` into `feat/phase-3`, then `feat/phase-3` into `dev`.
 2. Owner-only Phase 3 checks (plan §10): FPS and draw calls on a normal desktop with ten employees, the draw-call budget decision (still open; ten employees measure about 350 calls under SwiftShader against the 45-call target), a LAN playtest with real browsers, and one foreground Playwright run.
-3. Phase 4 — shared TV (not planned yet).
+3. Phase 4 — shared TV: planned in `docs/plans/phase-4.md` (draft for owner review), Meridian FEAT-67 with tasks T-1137 to T-1145 plus two proposals (P4.1, P4.4) awaiting owner approval. Owner results 2026-11-15: T-1037 playtest and T-1041 checks passed (about 55 FPS on the owner's laptop); T-1035 parked until deployment; T-1038 render cost accepted for Phase 3 with two follow-up proposals.
 
 ## Open items
 
