@@ -5,15 +5,20 @@ import {
   JOIN_ERROR_STATUS,
   MSG,
   OfficeState,
+  SERVER_MSG,
   officeLayout,
   normalizeOfficeCode,
   parseJoinOptions,
+  parseTvCommand,
+  type TvRateLimitedNotice,
   type JoinErrorCode,
   type JoinOptions,
 } from '@office/protocol';
+import { CommandRateLimiter } from '../commandRateLimiter';
 import { JoinRateLimiter } from '../joinRateLimiter';
 import { OfficeSim } from '../sim/activity';
 import { startMovementLoop } from '../sim/movement';
+import { TvSim } from '../sim/tv';
 
 export function joinError(code: JoinErrorCode): ServerError {
   return new ServerError(JOIN_ERROR_STATUS[code], code);
@@ -27,6 +32,8 @@ export const roomServices = {
    * the shipped value is `BALANCE.net.reconnectSeconds`.
    */
   reconnectSeconds: BALANCE.net.reconnectSeconds as number,
+  /** Server epoch-ms clock for TV timestamps and the TV rate limit; tests replace it. */
+  now: Date.now as () => number,
 };
 
 /**
@@ -50,6 +57,13 @@ export class OfficeRoom extends Room<{ state: OfficeState }> {
    * employee (position, activity, seat). One `SeatRegistry` per room lives inside it.
    */
   readonly sim = new OfficeSim();
+  /** REQ-TV-005: the only writer of `state.tv`. */
+  readonly tv = new TvSim(this.state.tv, () => roomServices.now());
+  private readonly tvLimiter = new CommandRateLimiter(
+    BALANCE.tv.rateLimitCommands,
+    BALANCE.tv.rateLimitWindowSeconds * 1000,
+    () => roomServices.now(),
+  );
 
   override onCreate(options: { officeCode?: unknown }): void {
     const code =
@@ -67,6 +81,19 @@ export class OfficeRoom extends Room<{ state: OfficeState }> {
     });
     this.onMessage(MSG.intent, (client, raw: unknown) => {
       this.sim.intent(client.sessionId, raw);
+    });
+    // REQ-TV-005, REQ-NFR-005: TV commands apply at once, in arrival order, after the
+    // validator and the per-client budget. Invalid commands are ignored silently.
+    this.onMessage(MSG.tv, (client, raw: unknown) => {
+      const cmd = parseTvCommand(raw);
+      if (cmd === null) return;
+      const retryAfterMs = this.tvLimiter.tryUse(client.sessionId);
+      if (retryAfterMs > 0) {
+        const notice: TvRateLimitedNotice = { retryAfterMs };
+        client.send(SERVER_MSG.tvRateLimited, notice);
+        return;
+      }
+      this.tv.apply(client.sessionId, cmd);
     });
     startMovementLoop(
       (tick, delayMs) => this.setTimestep(tick, delayMs),
@@ -118,6 +145,8 @@ export class OfficeRoom extends Room<{ state: OfficeState }> {
   /** A consented leave, or the end of an unanswered reconnect window: remove at once. */
   override onLeave(client: Client): void {
     this.sim.remove(client.sessionId);
+    this.tv.leave(client.sessionId);
+    this.tvLimiter.forget(client.sessionId);
     this.state.employees.delete(client.sessionId);
   }
 }

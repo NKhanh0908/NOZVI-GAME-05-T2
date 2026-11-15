@@ -5,6 +5,11 @@ import { PROTOCOL_VERSION } from '../version';
 /** Client to server message names. */
 export const MSG = { input: 'input', intent: 'intent', tv: 'tv' } as const;
 
+/** Server to client message names. */
+export const SERVER_MSG = { tvRateLimited: 'tv_rate_limited' } as const;
+/** REQ-NFR-005: payload of `tv_rate_limited`; the command was dropped without effect. */
+export type TvRateLimitedNotice = { retryAfterMs: number };
+
 /** Largest sequence number (stored as uint32 in `EmployeeState.lastSeq`). */
 export const MAX_SEQ = 0xffff_ffff;
 
