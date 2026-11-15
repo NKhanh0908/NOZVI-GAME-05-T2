@@ -1,0 +1,61 @@
+{
+  "_comment": "REQ-TV-003, REQ-TV-008: curated TV catalog. Seeded with Blender Foundation open movies (CC BY, embedding checked via YouTube oEmbed on 2026-11-15); the owner may replace them with 6 to 10 embeddable public videos.",
+  "videos": [
+    {
+      "id": "aqz-KE-bpKQ",
+      "title": "Big Buck Bunny",
+      "thumbnail": "https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+      "embeddable": true
+    },
+    {
+      "id": "eRsGyueVLvQ",
+      "title": "Sintel",
+      "thumbnail": "https://i.ytimg.com/vi/eRsGyueVLvQ/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=eRsGyueVLvQ",
+      "embeddable": true
+    },
+    {
+      "id": "R6MlUcmOul8",
+      "title": "Tears of Steel",
+      "thumbnail": "https://i.ytimg.com/vi/R6MlUcmOul8/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=R6MlUcmOul8",
+      "embeddable": true
+    },
+    {
+      "id": "Y-rmzh0PI3c",
+      "title": "Cosmos Laundromat",
+      "thumbnail": "https://i.ytimg.com/vi/Y-rmzh0PI3c/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=Y-rmzh0PI3c",
+      "embeddable": true
+    },
+    {
+      "id": "WhWc3b3KhnY",
+      "title": "Spring",
+      "thumbnail": "https://i.ytimg.com/vi/WhWc3b3KhnY/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=WhWc3b3KhnY",
+      "embeddable": true
+    },
+    {
+      "id": "mN0zPOpADL4",
+      "title": "Agent 327: Operation Barbershop",
+      "thumbnail": "https://i.ytimg.com/vi/mN0zPOpADL4/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=mN0zPOpADL4",
+      "embeddable": true
+    },
+    {
+      "id": "UXqq0ZvbOnk",
+      "title": "Charge",
+      "thumbnail": "https://i.ytimg.com/vi/UXqq0ZvbOnk/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=UXqq0ZvbOnk",
+      "embeddable": true
+    },
+    {
+      "id": "TLkA0RELQ1g",
+      "title": "Elephants Dream",
+      "thumbnail": "https://i.ytimg.com/vi/TLkA0RELQ1g/hqdefault.jpg",
+      "sourceUrl": "https://www.youtube.com/watch?v=TLkA0RELQ1g",
+      "embeddable": true
+    }
+  ]
+}
