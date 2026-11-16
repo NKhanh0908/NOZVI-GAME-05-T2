@@ -17,12 +17,18 @@ import { RemoteAvatars } from './remote/RemoteAvatars';
 import { EntranceBoard } from './hud/EntranceBoard';
 import { EmployeeRoster } from '../ui/employeeRoster';
 import { bindPrediction, employeeSource, roomOccupancy, type OfficeRoomHandle } from '../net';
+import { TvScreen } from '../tv/TvScreen';
+import { TvCssLayer } from '../tv/TvCssLayer';
 
 export class Game {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(BALANCE.camera.fovDeg, 1, 0.05, 50);
-  readonly renderer = new THREE.WebGLRenderer({ antialias: true });
+  /** alpha: the TV occluder clears to transparent so the CSS3D layer below shows through. */
+  readonly renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   private readonly labelRenderer = new CSS2DRenderer();
+  /** REQ-TV-001: WebGL bezel and occluder, plus the CSS3D layer holding the screen element. */
+  readonly tvScreen = new TvScreen(officeLayout);
+  readonly tvLayer = new TvCssLayer(this.tvScreen);
   private readonly nameplate = new Nameplate();
   readonly player = new Player();
   readonly input = new KeyboardInput(window);
@@ -87,6 +93,7 @@ export class Game {
     this.scene.add(office);
     this.roster = new EmployeeRoster(employeeSource(netRoom), netRoom.sessionId);
     this.scene.add(this.board.mesh);
+    this.scene.add(this.tvScreen.group);
     this.board.set(this.roster.count);
     this.unbindBoard = this.roster.subscribe(() => this.board.set(this.roster.count));
     const occluders: THREE.Object3D[] = [];
@@ -153,13 +160,18 @@ export class Game {
         getRemotes: () => this.remotes.list(),
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
+        getTv: () => this.tvInfo(),
       };
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Stacking: CSS3D TV layer (0) under the WebGL canvas (1) under the labels (2).
+    this.renderer.domElement.style.position = 'relative';
+    this.renderer.domElement.style.zIndex = '1';
     host.appendChild(this.renderer.domElement);
+    this.tvLayer.mount(host);
     this.labelRenderer.domElement.style.cssText =
-      'position:absolute;top:0;left:0;pointer-events:none';
+      'position:absolute;top:0;left:0;pointer-events:none;z-index:2';
     host.appendChild(this.labelRenderer.domElement);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
@@ -210,6 +222,7 @@ export class Game {
     if (w === 0 || h === 0) return;
     this.renderer.setSize(w, h);
     this.labelRenderer.setSize(w, h);
+    this.tvLayer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -247,6 +260,7 @@ export class Game {
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
       this.renderer.render(this.scene, this.camera);
       this.labelRenderer.render(this.scene, this.camera);
+      this.tvLayer.render(this.camera);
     });
   }
 
@@ -268,5 +282,33 @@ export class Game {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
+    this.tvLayer.dispose();
+    this.tvScreen.dispose();
+  }
+
+  /** Dev hook: TV screen pose, CSS layer size and whether the screen centre is in view. */
+  private tvInfo() {
+    const { position, width, height, rotY } = this.tvScreen.pose;
+    this.camera.updateMatrixWorld();
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(
+        this.camera.projectionMatrix,
+        this.camera.matrixWorldInverse,
+      ),
+    );
+    const [centre] = this.tvScreen.worldPoints();
+    const layer = this.tvLayer.renderer.domElement;
+    const box = this.tvLayer.container.getBoundingClientRect();
+    return {
+      position,
+      width,
+      height,
+      rotY,
+      inView: frustum.containsPoint(centre!),
+      layerSize: { width: layer.clientWidth, height: layer.clientHeight },
+      screenRect: { x: box.x, y: box.y, width: box.width, height: box.height },
+      pointerEvents: getComputedStyle(this.tvLayer.container).pointerEvents,
+      mounted: layer.isConnected && this.tvLayer.container.isConnected,
+    };
   }
 }
