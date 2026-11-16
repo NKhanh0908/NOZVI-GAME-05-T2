@@ -1,6 +1,6 @@
 # Phase 4.1 — Office Upgrade (visuals, interactions, details)
 
-> Status: Draft for owner review, 2026-11-15. Branch: `feat/phase-4.1` from `dev`, after Phase 4 (`docs/plans/phase-4.md`, FEAT-67) is done. Tracked in Meridian as FEAT-68 (auto-approved 2026-11-15); task ids are in §4 ("proposal" means it awaits owner approval in Meridian). This plan covers design, scope and acceptance. Step-by-step implementation detail belongs in each task.
+> Status: Approved by the owner on 2026-11-16 (chat), including the §6 defaults and tasks 17 to 21. Drafted 2026-11-15. Branch: `feat/phase-4.1` from `dev`, after Phase 4 (`docs/plans/phase-4.md`, FEAT-67) is done. Tracked in Meridian as FEAT-68 (auto-approved 2026-11-15); task ids are in §4. The FEAT-68 goal and scope text in Meridian predates tasks 17 to 21 and the sound decision; only a person can edit it there, so this file is the current scope. This plan covers design, scope and acceptance. Step-by-step implementation detail belongs in each task.
 
 **Goal:** Upgrade the existing 3D office in every visible respect without changing its layout: better-looking room and materials, fully furnished desks with a live desktop screen while working, avatars that visibly type and can play a few emotes, a multi-step coffee routine with a cup that others can see, clearer interactions and a restyled 2D UI.
 
@@ -36,7 +36,7 @@
 | Gate                                                                   | Blocks       | Why                                                                |
 | ---------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
 | Phase 4 done (FEAT-67, T-1145)                                         | All tasks    | Owner decision 1; both phases edit `Game.ts`, protocol and e2e     |
-| Owner approves this plan, the Meridian requirement and the §6 defaults | All tasks    | AGENTS.md §5: phase scope and gameplay rule changes need approval  |
+| Owner approves this plan, the Meridian requirement and the §6 defaults | All tasks    | Met on 2026-11-16 (AGENTS.md §5: scope changes need approval)      |
 | Avatar render cost proposals (Phase 3 follow-ups) approved and done    | Tasks 3 to 7 | New visual detail must not land on a scene that is over the budget |
 | Owner approves each new CC0 asset pack (task 2)                        | Task 2       | AGENTS.md §6: explain material new assets; licences in CREDITS.md  |
 
@@ -102,7 +102,7 @@ Each task stays within Meridian's 30-minute cap. All depend on Phase 4 being don
 | 5   | T-1150   | Lighting: window daylight, ceiling fixtures, softer shadows, light post-processing    | 4                 | REQ-ROOM-001                  |
 | 6   | T-1151   | Room shell details: windows, skirting, ceiling, door and air-conditioner models       | 2, 3              | REQ-ROOM-003, 007             |
 | 7   | T-1152   | Desk props: keyboard, mouse, lamp, stationery and decoration on all eight desks       | 2, 3              | REQ-ROOM-004                  |
-| 8   | proposal | Protocol: coffee item, sips, `brewing` activity, `BALANCE.coffee`; SPEC and DECISIONS | Phase 4           | REQ-INT-003                   |
+| 8   | T-1165   | Protocol: coffee item, sips, `brewing` activity, `BALANCE.coffee`; SPEC and DECISIONS | Phase 4           | REQ-INT-003                   |
 | 9   | T-1153   | Server: coffee routine in the activity sim (brew, cancel, sip, busy machine)          | 8                 | REQ-INT-003                   |
 | 10  | T-1154   | Client: brewing feedback at the machine, cup in hand and on the desk, remote view     | 2, 9              | REQ-INT-003                   |
 | 11  | T-1155   | Working desktop: simulated screen and desk lamp driven by replicated activity         | 7                 | REQ-INT-002                   |
