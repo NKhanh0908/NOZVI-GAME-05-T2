@@ -12,6 +12,7 @@ export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   resting: { clip: 'Sitting_Idle_Loop', loop: true },
   drinking: { clip: 'Interact', loop: false },
   waving: { clip: 'Idle_Loop', loop: true }, // Arm is overridden procedurally.
+  brewing: { clip: 'Idle_Loop', loop: true }, // Placeholder; brewing feedback is Phase 4.1 task 10.
 };
 
 const loader = new GLTFLoader();

@@ -40,6 +40,7 @@ const ACTIVITIES: ReadonlySet<string> = new Set<Activity>([
   'resting',
   'drinking',
   'waving',
+  'brewing',
 ]);
 
 /** A replicated activity string as an `Activity`; unknown values read as idle. */
