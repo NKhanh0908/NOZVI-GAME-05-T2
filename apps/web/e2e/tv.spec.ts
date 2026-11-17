@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { join, player, walkTo } from './helpers';
 
 type Tv = {
@@ -202,7 +202,7 @@ test('E at the TV opens the panel with the catalog, URL field and all controls',
   await expect(panel.getByRole('slider', { name: 'Seek' })).toBeVisible();
   await expect(panel.getByTestId('tv-now')).toHaveText('Nothing playing');
 
-  // The controls drive the local player (P4.8; nothing is sent to the room yet).
+  // The controls go to the room; the player follows the replicated state (T-1143).
   await catalog.getByRole('button', { name: 'Alpha clip' }).click();
   await expect.poll(async () => (await tvView(page)).status).toBe('playing');
   expect((await tvView(page)).videoId).toBe('AAAAAAAAAAA');
@@ -320,4 +320,166 @@ test('Esc closes the panel, and an invalid pasted URL shows a message', async ({
   await expect(panel).toHaveCount(0);
   expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('CANVAS');
   await moveWithW(page);
+});
+
+// T-1143 (REQ-TV-004, REQ-TV-006): the room `tv` state drives every page's player.
+type SyncHook = {
+  openTvMode(): void;
+  getTvSync(): { videoId: string | null; status: string; expected: number | null };
+  getTvPlayer(): { getTime(): number; state: { videoId: string | null; playing: boolean } };
+};
+type PageTv = {
+  videoId: string | null;
+  status: string;
+  expected: number | null;
+  time: number;
+  player: { videoId: string | null; playing: boolean };
+};
+const pageTv = (page: Page) =>
+  page.evaluate((): PageTv => {
+    const o = (window as unknown as { __office: SyncHook }).__office;
+    const s = o.getTvSync();
+    const p = o.getTvPlayer();
+    return {
+      videoId: s.videoId,
+      status: s.status,
+      expected: s.expected,
+      time: p.getTime(),
+      player: p.state,
+    };
+  });
+
+/** Opens TV mode through the dev hook (walking to the TV is covered above). */
+async function openPanel(page: Page) {
+  await page.evaluate(() => (window as unknown as { __office: SyncHook }).__office.openTvMode());
+  const panel = page.getByTestId('tv-panel');
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/** Every page shows `videoId` with `status`, and its player follows (fake player state). */
+async function expectAll(pages: Page[], videoId: string | null, status: string) {
+  for (const page of pages) {
+    await expect
+      .poll(async () => {
+        const tv = await pageTv(page);
+        return [tv.videoId, tv.status, tv.player.videoId, tv.player.playing];
+      })
+      .toEqual([videoId, status, videoId, status === 'playing']);
+  }
+}
+
+/** The player times of all pages agree within `seconds` (read close together). */
+async function expectInSync(pages: Page[], seconds: number) {
+  await expect
+    .poll(async () => {
+      const times = await Promise.all(pages.map(async (p) => (await pageTv(p)).time));
+      return Math.max(...times) - Math.min(...times);
+    })
+    .toBeLessThan(seconds);
+}
+
+async function joinPage(browser: Browser, name: string, code: string) {
+  const page = await (await browser.newContext()).newPage();
+  await join(page, name, code);
+  return page;
+}
+
+test('play, pause, seek, change video and Stop sync across three pages; Close is local', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const code = 'TV-E2E-06';
+  const a = await joinPage(browser, 'TvA', code);
+  const b = await joinPage(browser, 'TvB', code);
+  const c = await joinPage(browser, 'TvC', code);
+  const all = [a, b, c];
+  try {
+    // A picks a catalog video; B and C load the same id and play.
+    const panelA = await openPanel(a);
+    await panelA
+      .getByRole('list', { name: 'Catalog' })
+      .getByRole('button', { name: 'Alpha clip' })
+      .click();
+    await expectAll(all, 'AAAAAAAAAAA', 'playing');
+    await expectInSync(all, 1);
+
+    // B pauses, seeks and changes the video; A and C follow.
+    const panelB = await openPanel(b);
+    await panelB.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expectAll(all, 'AAAAAAAAAAA', 'paused');
+    await panelB.getByRole('slider', { name: 'Seek' }).fill('42');
+    for (const page of all) await expect.poll(async () => (await pageTv(page)).time).toBe(42);
+    await panelB.getByRole('button', { name: 'Play', exact: true }).click();
+    await expectAll(all, 'AAAAAAAAAAA', 'playing');
+    for (const page of all)
+      await expect.poll(async () => (await pageTv(page)).time).toBeGreaterThan(42.2);
+    await expectInSync(all, 1);
+    await panelB
+      .getByRole('list', { name: 'Catalog' })
+      .getByRole('button', { name: 'Bravo clip' })
+      .click();
+    await expectAll(all, 'BBBBBBBBBBB', 'playing');
+    await expect(a.getByTestId('tv-panel').getByTestId('tv-now')).toHaveText('Playing: Bravo clip');
+    await expectInSync(all, 1);
+    if (process.env.TV_SYNC_SHOT) {
+      // Evidence: page B's panel and screen while A and C play the same clip.
+      await b.screenshot({ path: process.env.TV_SYNC_SHOT });
+    }
+
+    // Close on A is local: A leaves TV mode, everyone keeps playing.
+    await panelA.getByRole('button', { name: 'Close' }).click();
+    await expect(a.getByTestId('tv-panel')).toHaveCount(0);
+    await a.waitForTimeout(500);
+    await expectAll(all, 'BBBBBBBBBBB', 'playing');
+
+    // Stop on C idles all three.
+    const panelC = await openPanel(c);
+    await panelC.getByRole('button', { name: 'Stop', exact: true }).click();
+    await expectAll(all, null, 'idle');
+    await expect(b.getByTestId('tv-fake-player')).toHaveText('');
+    await expect(panelC.getByTestId('tv-now')).toHaveText('Nothing playing');
+  } finally {
+    await Promise.all(all.map((p) => p.context().close()));
+  }
+});
+
+test('a page that joins mid-video seeks to the server position within 1 s', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const code = 'TV-E2E-07';
+  const a = await joinPage(browser, 'TvHost', code);
+  const late = await (await browser.newContext()).newPage();
+  try {
+    const panel = await openPanel(a);
+    await panel
+      .getByRole('list', { name: 'Catalog' })
+      .getByRole('button', { name: 'Café clip' })
+      .click();
+    await expectAll([a], 'CCCCCCCCCCC', 'playing');
+    // Let the video run so a late joiner has to seek well past the start.
+    await expect.poll(async () => (await pageTv(a)).time).toBeGreaterThan(4);
+
+    await join(late, 'TvLate', code);
+    const joinedAt = Date.now();
+    await expect
+      .poll(
+        async () => {
+          const tv = await pageTv(late);
+          return (
+            tv.player.videoId === 'CCCCCCCCCCC' &&
+            tv.player.playing &&
+            tv.expected !== null &&
+            Math.abs(tv.time - tv.expected) < 0.5
+          );
+        },
+        { timeout: 1000, intervals: [50] },
+      )
+      .toBe(true);
+    expect(Date.now() - joinedAt).toBeLessThan(1000);
+    const tv = await pageTv(late);
+    expect(tv.time).toBeGreaterThan(4);
+    await expectInSync([a, late], 1);
+  } finally {
+    await Promise.all([a, late].map((p) => p.context().close()));
+  }
 });

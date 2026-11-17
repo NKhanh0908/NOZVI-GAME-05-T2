@@ -22,7 +22,7 @@ import { TvCssLayer } from '../tv/TvCssLayer';
 import { FakeTvPlayer, type TvPlayer } from '../tv/player';
 import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
 import { FakeVideoProvider, YouTubeProvider, type VideoProvider } from '../tv/provider';
-import { LocalTvControls } from '../tv/controls';
+import { TvBinding } from '../tv/TvBinding';
 import { TvMode } from '../tv/TvMode';
 
 const IDLE_INPUT = { forward: 0, right: 0, run: false } as const;
@@ -44,11 +44,11 @@ export class Game {
   /** REQ-TV-003: catalog and URL parser; the fake one keeps e2e off ytimg.com thumbnails. */
   readonly tvProvider: VideoProvider =
     tvPlayerKind(import.meta.env) === 'fake' ? new FakeVideoProvider() : new YouTubeProvider();
-  /** P4.8: panel controls drive the local player only; P4.9 replaces this with room commands. */
-  readonly tvControls = new LocalTvControls(
-    this.tvPlayer,
-    (id) => this.tvProvider.getVideo(id)?.duration ?? null,
-  );
+  /** REQ-TV-004: panel commands go to the room; the player follows the replicated `tv`. */
+  readonly tvControls = new TvBinding(this.tvPlayer, {
+    catalogDuration: (id) => this.tvProvider.getVideo(id)?.duration ?? null,
+    visibility: document,
+  });
   /** REQ-TV-002: TV mode makes the screen clickable and hands focus back on close. */
   readonly tvMode = new TvMode((open) => this.applyTvMode(open));
   private readonly nameplate = new Nameplate();
@@ -116,6 +116,7 @@ export class Game {
       },
     );
     this.unbindPrediction = this.bindRoom(netRoom);
+    this.tvControls.attach(netRoom);
     const office = buildRoom(officeLayout);
     this.remotes = new RemoteAvatars(this.scene, employeeSource(netRoom), netRoom.sessionId);
     this.scene.add(office);
@@ -189,10 +190,11 @@ export class Game {
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
         getTv: () => this.tvInfo(),
-        // P4.6: e2e drives the player directly until the room binding lands (P4.9).
         getTvPlayer: () => this.tvPlayer,
         isTvMode: () => this.tvMode.isOpen,
+        openTvMode: () => this.tvMode.enter(),
         getTvView: () => this.tvControls.view(),
+        getTvSync: () => ({ ...this.tvControls.snapshot, expected: this.tvControls.expected() }),
       };
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
@@ -223,6 +225,7 @@ export class Game {
   detachRoom(): void {
     this.unbindPrediction();
     this.unbindPrediction = () => undefined;
+    this.tvControls.detach();
   }
 
   /**
@@ -237,6 +240,7 @@ export class Game {
     this.unbindPrediction = this.bindRoom(netRoom);
     this.remotes.rebind(employeeSource(netRoom));
     this.roster.rebind(employeeSource(netRoom));
+    this.tvControls.attach(netRoom);
   }
 
   private bindRoom(netRoom: OfficeRoomHandle): () => void {
@@ -333,6 +337,7 @@ export class Game {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
+    this.tvControls.dispose();
     this.tvPlayer.dispose();
     this.tvLayer.dispose();
     this.tvScreen.dispose();
