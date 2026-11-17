@@ -8,7 +8,9 @@ import {
   OFFICE_ROOM,
   PROTOCOL_VERSION,
   BALANCE,
+  SERVER_MSG,
   officeLayout,
+  readTv,
   type EmployeeState,
   type OfficeState,
 } from '@office/protocol';
@@ -376,5 +378,91 @@ describe('OfficeRoom disconnect and reconnect', () => {
     await waitFor(() => !room.state.employees.has(a.sessionId), 500);
     expect(room.sim.activity.seats.occupant(DESK)).toBeNull();
     await waitFor(() => b.state.employees?.get(a.sessionId) === undefined, 500);
+  });
+});
+
+describe('OfficeRoom shared TV (REQ-TV-004, REQ-TV-005, REQ-NFR-005)', () => {
+  const VIDEO = 'dQw4w9WgXcQ';
+  const shippedNow = roomServices.now;
+  let tvNow = 1_794_000_000_000;
+
+  beforeEach(() => {
+    tvNow += 60_000;
+    roomServices.now = () => tvNow;
+  });
+  afterAll(() => {
+    roomServices.now = shippedNow;
+  });
+
+  it('starts idle and replicates a load and play from A to B', async () => {
+    const a = (await join('tv-01')) as Room<OfficeState>;
+    const b = (await join('tv-01', { name: 'Bao' })) as Room<OfficeState>;
+    await waitFor(() => b.state.tv !== undefined);
+    expect(readTv(b.state.tv)).toMatchObject({ videoId: null, status: 'idle' });
+
+    a.send(MSG.tv, { type: 'load', videoId: VIDEO });
+    await waitFor(() => b.state.tv?.videoId === VIDEO);
+    expect(readTv(b.state.tv)).toEqual({
+      videoId: VIDEO,
+      provider: 'youtube',
+      status: 'playing',
+      currentTime: 0,
+      updatedAt: tvNow,
+      controllerSessionId: a.sessionId,
+    });
+
+    a.send(MSG.tv, { type: 'pause' });
+    await waitFor(() => b.state.tv?.status === 'paused');
+    tvNow += 2000;
+    a.send(MSG.tv, { type: 'play' });
+    await waitFor(() => b.state.tv?.status === 'playing');
+    expect(readTv(b.state.tv)).toMatchObject({
+      status: 'playing',
+      currentTime: 0,
+      updatedAt: tvNow,
+      controllerSessionId: a.sessionId,
+    });
+    // B can control too.
+    b.send(MSG.tv, { type: 'seek', time: 12.5 });
+    await waitFor(() => a.state.tv?.currentTime === 12.5);
+    expect(a.state.tv.controllerSessionId).toBe(b.sessionId);
+  });
+
+  it('refuses the 6th command within 10 s with tv_rate_limited and ignores invalid ones', async () => {
+    const a = (await join('tv-02')) as Room<OfficeState>;
+    const notices: unknown[] = [];
+    a.onMessage(SERVER_MSG.tvRateLimited, (n: unknown) => notices.push(n));
+    const room = local('TV-02');
+
+    a.send(MSG.tv, { type: 'seek', time: -1 });
+    a.send(MSG.tv, { type: 'load', videoId: 'bad' });
+    a.send(MSG.tv, { type: 'rewind' });
+    a.send(MSG.tv, { type: 'load', videoId: VIDEO });
+    await waitFor(() => room.state.tv.videoId === VIDEO);
+    for (let i = 1; i <= 4; i++) a.send(MSG.tv, { type: 'seek', time: i });
+    await waitFor(() => room.state.tv.currentTime === 4);
+    const before = readTv(room.state.tv);
+
+    tvNow += 9_999;
+    a.send(MSG.tv, { type: 'stop' });
+    await waitFor(() => notices.length === 1);
+    expect(notices[0]).toEqual({ retryAfterMs: 1 });
+    expect(readTv(room.state.tv)).toEqual(before);
+
+    // Once the window slides past the first command, one more is allowed.
+    tvNow += 1;
+    a.send(MSG.tv, { type: 'stop' });
+    await waitFor(() => room.state.tv.status === 'idle');
+    expect(notices).toHaveLength(1);
+  });
+
+  it('keeps playback for others with controllerSessionId null when the controller leaves', async () => {
+    const a = (await join('tv-03')) as Room<OfficeState>;
+    const b = (await join('tv-03', { name: 'Bao' })) as Room<OfficeState>;
+    a.send(MSG.tv, { type: 'load', videoId: VIDEO });
+    await waitFor(() => b.state.tv?.controllerSessionId === a.sessionId);
+    await a.leave(true);
+    await waitFor(() => readTv(b.state.tv).controllerSessionId === null);
+    expect(readTv(b.state.tv)).toMatchObject({ videoId: VIDEO, status: 'playing' });
   });
 });

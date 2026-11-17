@@ -61,6 +61,26 @@ export const BALANCE = {
       runMinutes: 10,
     },
   },
+  /** Phase 4 shared TV (REQ-TV-006, REQ-NFR-005). */
+  tv: {
+    /** Drift below this many seconds is left alone. */
+    ignoreBelowSeconds: 0.5,
+    /** Drift from ignoreBelowSeconds up to this many seconds is corrected with a rate nudge. */
+    nudgeUpToSeconds: 2,
+    /** Drift above nudgeUpToSeconds is corrected with a hard seek. */
+    hardSeekAboveSeconds: 2,
+    /** A nudge plays at 1 +/- this rate (0.05 = 5 %). */
+    nudgeRate: 0.05,
+    /** A single nudge lasts at most this long. */
+    nudgeMaxSeconds: 2,
+    /** Clients are expected to converge within this many seconds after a change. */
+    convergenceSeconds: 5,
+    /** Phase acceptance: drift between clients after convergence stays below this. */
+    driftTargetSeconds: 1.0,
+    /** REQ-NFR-005: at most rateLimitCommands TV commands per rateLimitWindowSeconds per client. */
+    rateLimitCommands: 5,
+    rateLimitWindowSeconds: 10,
+  },
   rendering: {
     /** 'agx' or 'aces' (THREE.AgXToneMapping / THREE.ACESFilmicToneMapping). */
     toneMapping: 'aces',

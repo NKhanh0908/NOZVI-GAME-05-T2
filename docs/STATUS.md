@@ -1,6 +1,6 @@
 # STATUS — project memory
 
-Updated: 2026-11-13 by Claude Code · Phase: Phase 3 (FEAT-51) — all 11 tasks implemented on `feat/phase-3`; T-1041 verification on `feat/T-1041-verification`; owner checks pending
+Updated: 2026-11-17 by Claude Code · Phase: Phase 4 (FEAT-67) — all 11 tasks implemented on `req/feat-67`; owner checks pending; next Phase 4.1
 Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/SPEC.md` (implementation spec). `docs/GDD.md` is deprecated (casual template).
 
 ## Done
@@ -21,16 +21,20 @@ Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTU
 
 - **Phase 3 implemented** on `feat/phase-3` (`docs/plans/phase-3.md`, Meridian FEAT-51): Colyseus server (OfficeRoom per code, 20 Hz authoritative movement, server-owned activity and seats, 20 s reconnect window), client connection, fixed-step prediction, remote avatars, replicated seats, employee list and entrance board, reconnect banner. T-1041 verification results and the acceptance record: plan §10: ten-client check passes (9 bots + 1 browser, 11th refused); the 10-minute network-profile soak shows remote jumps in 0.6% of frames, in line with retransmit spikes longer than the 100 ms interpolation delay.
 
+- **Phase 4 implemented** on `req/feat-67` (`docs/plans/phase-4.md`, Meridian FEAT-67, T-1163 to T-1145): shared YouTube TV on the entertainment wall (CSS3D iframe with depth-only occluder, server `TvSim` with ordered commands and a 5-per-10-s limit, curated catalog plus pasted links, drift sync, TV mode panel with Close and focus recovery, muted start, per-video error UI). Owner accepted the plan §6 defaults on 2026-11-17. Verification record: plan §10 — 10-minute three-client drift soak under `NET_PROFILE=test` passes (max 0.205 s against the 1.0 s target, fake player).
+
 ## Next (ordered)
 
-1. Owner: review and merge `feat/T-1041-verification` into `feat/phase-3`, then `feat/phase-3` into `dev`.
-2. Owner-only Phase 3 checks (plan §10): FPS and draw calls on a normal desktop with ten employees, the draw-call budget decision (still open; ten employees measure about 350 calls under SwiftShader against the 45-call target), a LAN playtest with real browsers, and one foreground Playwright run.
-3. Phase 4 — shared TV: planned in `docs/plans/phase-4.md` (draft for owner review), Meridian FEAT-67 with tasks T-1137 to T-1145 plus two proposals (P4.1, P4.4) awaiting owner approval. Owner results 2026-11-15: T-1037 playtest and T-1041 checks passed (about 55 FPS on the owner's laptop); T-1035 parked until deployment; T-1038 render cost accepted for Phase 3 with two follow-up proposals.
-4. Phase 4.1 — office upgrade (visuals, furnished desks with a working desktop screen, multi-step coffee with a cup, interaction feedback, UI restyle; no sound): planned in `docs/plans/phase-4.1.md` (draft for owner review), Meridian FEAT-68 with tasks T-1146 to T-1160 (T-1157 sound dropped by the owner) plus one proposal (coffee protocol) awaiting owner approval. Starts after Phase 4 is done (owner, 2026-11-15).
+1. Owner-only Phase 4 checks (plan §10): Milestone A LAN playtest with two real browsers; one manual real-YouTube run (drift, focus recovery, occlusion); FPS with the TV playing next to the Phase 3 numbers; one foreground Playwright run; confirm or replace the 8 seeded catalog videos.
+2. Owner: review and merge `req/feat-67`.
+3. Phase 4.1 — office upgrade: `docs/plans/phase-4.1.md` (draft for owner review), Meridian FEAT-68, tasks T-1146 to T-1160 (T-1157 dropped) plus one proposal awaiting approval.
+4. Still open from Phase 3: draw-call budget decision; T-1035 parked until deployment.
 
 ## Open items
 
-- TV error path (Phase 4): use a non-existent or private video id; oEmbed 401 identifies embed-blocked ids.
+- OQ-025: no confirmed embed-blocked video id, so the live TV error check is open (simulated codes are tested); oEmbed 401 identifies embed-blocked ids.
+- TV known limits: a controller leaving before the end of a video means no client reports the end; a same-handle SDK reconnect can give one late clock sample.
+- e2e flakes seen 2026-11-17 in non-TV specs (`reconnect.spec.ts`, `remote.spec.ts` walk test): pass on rerun; details in phase-4 plan §10.
 - Hosting accounts (Cloudflare Pages, Render) needed only at Phase 5.
 
 ## Working notes

@@ -166,3 +166,24 @@ Context: REQ-NET-004 asks for a manual 10-minute run at 100 ms RTT and 1% loss. 
 Choice: `apps/server/src/netProfile.ts` wraps `WebSocketClient.prototype.raw` with one in-order delay line per socket: each message waits `rttMs` ± `jitterMs`, and `lossPercent` of messages add `retransmitMs` (head-of-line blocking included). Values live in `BALANCE.net.testProfile` (100 ms, ±20 ms, 1%, 200 ms, 10 min run). Only the downlink is delayed, by the whole round trip, which gives the same input-to-acknowledgement time. On only with `NET_PROFILE=test`, never with `NODE_ENV=production`. The soak is `apps/web/e2e/netProfile.spec.ts`, skipped unless `NET_PROFILE=test`; bots for manual runs are `pnpm --filter @office/server bots`.
 Alternatives: `COLYSEUS_LATENCY` (fixed delay only; it also patches the same prototype, so the two must not be combined); OS-level `tc netem` (needs root and real packet loss tooling, not portable to the owner's machine); dropping messages (not what TCP does).
 Consequence: The profile approximates the network seen by one client, not real packet loss. Remote smoothness under it is measured by counting per-frame jumps in the browser; the result is in `docs/plans/phase-3.md` §10.
+
+## 2026-11-17 — Phase 4 plan §6 defaults confirmed (owner)
+
+Context: `docs/plans/phase-4.md` §6 listed defaults for OQ-021, OQ-022, OQ-023, OQ-025 and autoplay; work ran on them while they waited for the owner.
+Choice: The owner accepted the defaults for this run: (1) a static `apps/web/src/tv/catalog.json` plus pasted YouTube links (seeded with 8 Blender Foundation open movies; the owner may replace them); (2) when the controller leaves, playback continues and `controllerSessionId` becomes null, and a video end is a `pause` reported by the controller's client (no `ended` status); (3) `currentTime` in seconds, `updatedAt` in server epoch ms, client-side clock offset; (5) muted start with "Click to unmute". (4) No embed-blocked fixture exists, so OQ-025 stays open (plan §6.4). Node 22 is accepted for the cloud session (Node 24 stays the project requirement).
+Alternatives: Server-side catalog or Data API search (out of scope, needs a key); host-only control or pausing on controller leave; an `ended` status.
+Consequence: If the controller leaves before the end, no client reports the end and the others hold the last frame until someone acts. The live embed-blocked check remains an open gap.
+
+## 2026-11-17 — TV clock offset is sampled only from fresh `updatedAt` after the first real snapshot (T-1143)
+
+Context: Colyseus resolves a join before the first full state arrives. `TvBinding` took the empty schema defaults as the first snapshot, so the real state's old `updatedAt` became a clock sample and a late joiner's offset lagged the server by the age of the last command (fixed in 0c3fe1a).
+Choice: The binding ignores room state until it contains the session's own employee; that state is the first snapshot and is never a sample. Each later change of `updatedAt` gives one sample (`updatedAt` minus local receive time); `ClockOffsetEstimator` keeps the largest recent sample (a lower bound of the true offset, the least-delayed patch wins). Until a sample exists the local clock stands in for server time.
+Alternatives: A ping/pong time sync message (wire change, more traffic); sampling every patch (most patches do not touch `tv` and carry no fresh stamp).
+Consequence: A client's error is roughly its patch delay at the last command, held while under the 0.5 s ignore band (soak: at most 0.32 s against server time, 0.21 s between clients). A same-handle SDK reconnect can give one late sample; the next command corrects it.
+
+## 2026-11-17 — TV errors stay local; e2e uses a fake player (T-1140, T-1144)
+
+Context: A video can fail on one client and play on another (embedding, region, codecs), and the YouTube iframe cannot run in headless e2e.
+Choice: An IFrame `onError` (2, 5, 100, 101, 150) marks the video failed for that client only: the player stops, the screen and panel show a per-video message, the catalog item is disabled, and the shared state is left alone. The player sits behind the `TvPlayer` interface; `VITE_TV_PLAYER=fake` (set by Playwright) selects `FakeTvPlayer` and the fake catalog, so e2e never contacts YouTube.
+Alternatives: Reporting errors to the server and stopping everyone (one bad client stops the room); driving the real iframe in e2e (network, autoplay and codec flakiness).
+Consequence: Focus recovery and playback are checked in e2e with the fake player and a stand-in iframe only; the real YouTube iframe, real drift and the embed-blocked path need a manual run on the owner's machine.

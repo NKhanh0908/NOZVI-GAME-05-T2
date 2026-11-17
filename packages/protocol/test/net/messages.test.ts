@@ -5,6 +5,7 @@ import {
   parseInput,
   parseIntent,
   parseJoinOptions,
+  parseTvCommand,
 } from '../../src/net/messages';
 import { officeLayout } from '../../src/layout/layout';
 import { PROTOCOL_VERSION } from '../../src/version';
@@ -101,5 +102,46 @@ describe('parseJoinOptions', () => {
     ['non-string name', { name: 42 }],
   ])('rejects %s as invalid_identity', (_label, patch) => {
     expect(parseJoinOptions({ ...ok, ...patch })).toEqual({ ok: false, error: 'invalid_identity' });
+  });
+});
+
+describe('parseTvCommand (REQ-TV-005)', () => {
+  it.each([
+    [{ type: 'load', videoId: 'dQw4w9WgXcQ' }],
+    [{ type: 'load', videoId: 'a-b_C1234_Z' }],
+    [{ type: 'play' }],
+    [{ type: 'pause' }],
+    [{ type: 'seek', time: 0 }],
+    [{ type: 'seek', time: 93.25 }],
+    [{ type: 'stop' }],
+  ])('accepts %j', (cmd) => {
+    expect(parseTvCommand(cmd)).toEqual(cmd);
+  });
+  it('returns a clean copy without extra fields', () => {
+    expect(parseTvCommand({ type: 'play', extra: 1 })).toEqual({ type: 'play' });
+  });
+  it.each([
+    ['unknown type', { type: 'close' }],
+    ['missing type', {}],
+    ['numeric type', { type: 1 }],
+    ['NaN seek', { type: 'seek', time: NaN }],
+    ['Infinity seek', { type: 'seek', time: Infinity }],
+    ['negative seek', { type: 'seek', time: -0.1 }],
+    ['string seek', { type: 'seek', time: '5' }],
+    ['missing seek time', { type: 'seek' }],
+    ['short id', { type: 'load', videoId: 'abc' }],
+    ['long id', { type: 'load', videoId: 'dQw4w9WgXcQx' }],
+    ['id with bad char', { type: 'load', videoId: 'dQw4w9WgX.Q' }],
+    ['url instead of id', { type: 'load', videoId: 'https://youtu.be/dQw4w9WgXcQ' }],
+    ['missing id', { type: 'load' }],
+    ['play with time', { type: 'play', time: 3 }],
+    ['stop with id', { type: 'stop', videoId: 'dQw4w9WgXcQ' }],
+  ])('rejects %s', (_label, raw) => {
+    expect(parseTvCommand(raw)).toBeNull();
+  });
+  it('rejects non-objects', () => {
+    for (const raw of [null, undefined, 'play', 3, [{ type: 'play' }]]) {
+      expect(parseTvCommand(raw)).toBeNull();
+    }
   });
 });

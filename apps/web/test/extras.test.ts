@@ -92,6 +92,8 @@ function frameLoop() {
     remotes: { update() {} },
     renderer: { setAnimationLoop: (callback: () => void) => (frame = callback), render() {} },
     labelRenderer: { render() {} },
+    tvLayer: { render() {} },
+    tvMode: { isOpen: false },
   };
   Game.prototype.start.call(game as unknown as Game);
   return { player, input, tick: () => frame() };

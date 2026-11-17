@@ -11,6 +11,8 @@ export type LayoutBox = {
   size: Vec3;
   material?: string;
   rotY?: number;
+  /** Sub-parts of an item (for example the TV's screen and speakers). */
+  components?: LayoutBox[];
 };
 export type Workstation = {
   id: string;

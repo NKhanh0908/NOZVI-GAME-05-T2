@@ -20,6 +20,8 @@ export type InteractionHooks = {
   /** Sends an activity request to the server; the result arrives in room state. */
   sendIntent(intent: IntentMessage): void;
   onAction?(target: Interactable): void;
+  /** E at the TV opens TV mode (REQ-TV-002). */
+  onTv?(): void;
 };
 
 const LABELS: Record<string, string> = {
@@ -28,8 +30,9 @@ const LABELS: Record<string, string> = {
   water_dispenser: 'E — Take a break',
   sofa: 'E — Rest',
   storage_cabinet: 'E — Open cabinet',
+  TV: 'E — Watch TV',
 };
-const TARGETS = officeLayout.interactables.filter((i) => i.type !== 'computer' && i.type !== 'TV');
+const TARGETS = officeLayout.interactables.filter((i) => i.type !== 'computer');
 
 function deskSeatId(target: Interactable): string | null {
   return officeLayout.workstations.find((w) => w.id === target.workstationId)?.seat.id ?? null;
@@ -92,6 +95,10 @@ export class InteractionController {
     }
     if (t.type === 'main_door') {
       this.hooks.onExit();
+      return;
+    }
+    if (t.type === 'TV') {
+      this.hooks.onTv?.();
       return;
     }
     this.hooks.onAction?.(t);
