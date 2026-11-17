@@ -24,7 +24,8 @@ export type InputMessage = {
   yaw: number;
 };
 
-export const INTENT_TYPES = ['sit', 'stand', 'toggleWork', 'drink', 'wave'] as const;
+/** `brew` (REQ-INT-003) starts the coffee routine at the coffee machine. */
+export const INTENT_TYPES = ['sit', 'stand', 'toggleWork', 'drink', 'wave', 'brew'] as const;
 export type IntentType = (typeof INTENT_TYPES)[number];
 export type IntentMessage = { type: 'sit'; seatId: string } | { type: Exclude<IntentType, 'sit'> };
 

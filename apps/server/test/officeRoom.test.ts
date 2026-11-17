@@ -269,6 +269,68 @@ describe('OfficeRoom activity and seats', () => {
   });
 });
 
+describe('OfficeRoom coffee routine (REQ-INT-003)', () => {
+  const machine = officeLayout.interactables.find((i) => i.type === 'coffee_machine')!;
+
+  /** Test setup only: puts an employee at the coffee machine on the server. */
+  function placeAtMachine(code: string, sessionId: string): void {
+    const e = local(code).state.employees.get(sessionId)!;
+    e.x = machine.interactionPoint[0];
+    e.z = machine.interactionPoint[2];
+  }
+  /** Test setup only: runs the activity timers as if their time were up (no 4 s waits). */
+  function finishTimers(code: string): void {
+    const room = local(code);
+    room.sim.activity.expire(room.state.employees, Number.MAX_SAFE_INTEGER);
+  }
+
+  it('replicates brewing, item and sips to a second client; three sips empty the cup', async () => {
+    const a = (await join('coffee-01')) as Room<OfficeState>;
+    const b = (await join('coffee-01', { name: 'Bao' })) as Room<OfficeState>;
+    const server = () => local('COFFEE-01').state.employees.get(a.sessionId)!;
+    const seen = () => b.state.employees?.get(a.sessionId);
+    await waitFor(() => seen() !== undefined);
+    expect(seen()).toMatchObject({ item: '', sips: 0 });
+
+    placeAtMachine('COFFEE-01', a.sessionId);
+    a.send(MSG.intent, { type: 'brew' });
+    await waitFor(() => seen()?.activity === 'brewing');
+    expect(local('COFFEE-01').sim.activity.machineBusy).toBe(true);
+
+    // A second employee at the busy machine is refused.
+    placeAtMachine('COFFEE-01', b.sessionId);
+    b.send(MSG.intent, { type: 'brew' });
+    await new Promise((r) => setTimeout(r, 4 * (1000 / BALANCE.net.tickHz)));
+    expect(local('COFFEE-01').state.employees.get(b.sessionId)!.activity).toBe('idle');
+
+    finishTimers('COFFEE-01');
+    await waitFor(() => seen()?.item === 'coffee');
+    expect(seen()).toMatchObject({ activity: 'idle', item: 'coffee', sips: BALANCE.coffee.sips });
+
+    for (const left of [2, 1, 0]) {
+      a.send(MSG.intent, { type: 'drink' });
+      await waitFor(() => server().activity === 'drinking');
+      finishTimers('COFFEE-01');
+      await waitFor(() => seen()?.sips === left && seen()?.activity === 'idle');
+    }
+    expect(seen()).toMatchObject({ item: '', sips: 0 });
+  });
+
+  it('frees the machine when the brewing client leaves', async () => {
+    const a = (await join('coffee-02')) as Room<OfficeState>;
+    const b = (await join('coffee-02', { name: 'Bao' })) as Room<OfficeState>;
+    placeAtMachine('COFFEE-02', a.sessionId);
+    placeAtMachine('COFFEE-02', b.sessionId);
+    a.send(MSG.intent, { type: 'brew' });
+    const employees = local('COFFEE-02').state.employees;
+    await waitFor(() => employees.get(a.sessionId)?.activity === 'brewing');
+    await a.leave(true);
+    await waitFor(() => !local('COFFEE-02').sim.activity.machineBusy);
+    b.send(MSG.intent, { type: 'brew' });
+    await waitFor(() => employees.get(b.sessionId)?.activity === 'brewing');
+  });
+});
+
 describe('OfficeRoom disconnect and reconnect', () => {
   const DESK = 'ws_1_seat';
   const ws1 = officeLayout.workstations.find((w) => w.seat.id === DESK)!;

@@ -1,12 +1,15 @@
 import {
   BALANCE,
   SeatRegistry,
+  EMPTY_HAND,
   isSeated,
   nextActivity,
+  nextHeld,
   officeLayout,
   parseIntent,
   type Aabb,
   type Activity,
+  type Held,
   type IntentMessage,
   type Interactable,
   type OfficeLayout,
@@ -15,7 +18,7 @@ import {
 import { MovementSim, stepBody, type MovementBody } from './movement';
 
 /** The replicated fields the activity simulation reads and writes (`EmployeeState` fits). */
-export type ActivityBody = MovementBody & { seatId: string };
+export type ActivityBody = MovementBody & { seatId: string; item: string; sips: number };
 
 type Bodies = { get(id: string): ActivityBody | undefined };
 
@@ -65,6 +68,15 @@ export function inRange(body: { x: number; z: number }, target: Interactable): b
 }
 
 const DRINK_TYPES: ReadonlySet<string> = new Set(['coffee_machine', 'water_dispenser']);
+/** Activities whose end is driven by a timer in `ActivitySim.timers`. */
+const TIMED: ReadonlySet<string> = new Set(['drinking', 'waving', 'brewing']);
+
+const heldOf = (body: ActivityBody): Held =>
+  body.item === 'coffee' ? { item: 'coffee', sips: body.sips } : { ...EMPTY_HAND };
+function setHeld(body: ActivityBody, held: Held): void {
+  body.item = held.item;
+  body.sips = held.sips;
+}
 
 type Pending = { afterSeq: number; intent: IntentMessage };
 
@@ -80,14 +92,22 @@ type Pending = { afterSeq: number; intent: IntentMessage };
  *   The facing cone the client uses to pick a prompt target is not checked: range only.
  * - `stand`: a seated employee returns to the seat's stand point with `idle`.
  * - `toggleWork`: switches `sitting` and `working` for a desk occupant only.
- * - `drink`: needs the coffee machine or water dispenser in range; `drinking` returns to
- *   `idle` after `BALANCE.activity.drinkSeconds`.
+ * - `drink` with an empty hand: needs the coffee machine or water dispenser in range;
+ *   `drinking` returns to `idle` after `BALANCE.activity.drinkSeconds`.
+ * - `drink` while holding a coffee (REQ-INT-003): one sip anywhere, with the same activity
+ *   and timer. The sip counts when the timer ends; the last sip clears the item.
+ * - `brew` (REQ-INT-003): needs the coffee machine in range, an empty hand, idle or walking
+ *   and a free machine. `brewing` lasts `BALANCE.coffee.brewSeconds`, then the employee is
+ *   `idle` holding a coffee with `BALANCE.coffee.sips` sips. The machine serves one
+ *   employee at a time: it is busy while its brewer is `brewing`, so a cancelled brew, a
+ *   leave or a dropped connection frees it.
  * - `wave`: `waving` returns to `idle` after `BALANCE.activity.waveSeconds`.
  * - Movement input with a nonzero axis while seated stands the employee up at the seat's
  *   stand point and frees the seat, then applies the step (walking), like the client's
  *   `onMoveIntent` followed by its movement update. A zero-axis input while seated only
  *   advances `lastSeq`; the seated pose is never moved by the collision solver.
- * - Moving while drinking or waving cancels the break (activity becomes walking).
+ * - Moving while drinking, waving or brewing cancels it (activity becomes walking); a
+ *   cancelled sip or brew changes nothing held.
  *
  * A rejected intent changes nothing and gets no reply.
  */
@@ -96,6 +116,8 @@ export class ActivitySim {
   private readonly pending = new Map<string, Pending[]>();
   private readonly timers = new Map<string, number>();
   private readonly seatIds: ReadonlySet<string>;
+  /** The employee using the coffee machine; the machine is busy while it is `brewing`. */
+  private brewer: { id: string; body: ActivityBody } | null = null;
 
   constructor(
     private readonly spots: ReadonlyMap<string, SeatSpot> = seatSpots(),
@@ -114,11 +136,27 @@ export class ActivitySim {
     if (this.pending.has(id)) this.pending.set(id, []);
   }
 
-  /** Forgets a client and frees its seat. */
+  /** Forgets a client and frees its seat and the coffee machine. */
   remove(id: string): void {
     this.pending.delete(id);
     this.timers.delete(id);
     this.seats.release(id);
+    if (this.brewer?.id === id) this.brewer = null;
+  }
+
+  /** True while an employee is brewing at the coffee machine. */
+  get machineBusy(): boolean {
+    return this.brewer !== null && this.brewer.body.activity === 'brewing';
+  }
+
+  /** Cancels a running brew of `id` (a dropped connection): idle, empty hand, machine free. */
+  cancelBrew(id: string): void {
+    if (this.brewer?.id !== id) return;
+    const { body } = this.brewer;
+    this.brewer = null;
+    if (body.activity !== 'brewing') return;
+    this.timers.delete(id);
+    body.activity = 'idle';
   }
 
   /**
@@ -156,9 +194,22 @@ export class ActivitySim {
         return this.set(body, nextActivity(activity, { type: 'toggleWork' }));
       }
       case 'drink': {
-        const near = this.interactables.some((i) => DRINK_TYPES.has(i.type) && inRange(body, i));
+        const holding = body.item === 'coffee';
+        const near =
+          holding || this.interactables.some((i) => DRINK_TYPES.has(i.type) && inRange(body, i));
         if (!near || !this.set(body, nextActivity(activity, { type: 'drink' }))) return false;
         this.timers.set(id, nowMs + BALANCE.activity.drinkSeconds * 1000);
+        return true;
+      }
+      case 'brew': {
+        const machine = this.interactables.find(
+          (i) => i.type === 'coffee_machine' && inRange(body, i),
+        );
+        if (!machine || this.machineBusy) return false;
+        const next = nextActivity(activity, { type: 'brew' }, heldOf(body).item);
+        if (!this.set(body, next)) return false;
+        this.brewer = { id, body };
+        this.timers.set(id, nowMs + BALANCE.coffee.brewSeconds * 1000);
         return true;
       }
       case 'wave': {
@@ -184,17 +235,26 @@ export class ActivitySim {
     return true;
   }
 
-  /** Ends drink and wave breaks whose time is up, and drops timers of cancelled breaks. */
+  /**
+   * Ends drink, wave and brew timers whose time is up (a finished sip or brew updates the
+   * held item), and drops timers of cancelled ones.
+   */
   expire(bodies: Bodies, nowMs: number): void {
     for (const [id, endsAt] of this.timers) {
       const body = bodies.get(id);
-      if (!body || (body.activity !== 'drinking' && body.activity !== 'waving')) {
+      if (!body || !TIMED.has(body.activity)) {
         this.timers.delete(id);
       } else if (nowMs >= endsAt) {
         this.timers.delete(id);
-        body.activity = nextActivity(body.activity, { type: 'actionDone' });
+        const activity = body.activity as Activity;
+        const event =
+          activity === 'brewing' ? { type: 'brewDone' as const } : { type: 'actionDone' as const };
+        setHeld(body, nextHeld(activity, heldOf(body), event));
+        body.activity = nextActivity(activity, event);
+        if (this.brewer?.id === id) this.brewer = null;
       }
     }
+    if (this.brewer && !this.machineBusy) this.brewer = null;
   }
 
   private sit(id: string, body: ActivityBody, seatId: string): boolean {
@@ -223,7 +283,7 @@ export class ActivitySim {
 /**
  * The room simulation: movement and activity per 50 ms tick. Per client, in join order:
  * ready intents, then at most one input (standing a seated body up first if it moves),
- * then intents that were waiting for that input. Drink and wave timers expire last.
+ * then intents that were waiting for that input. Drink, wave and brew timers expire last.
  * Join order therefore decides contested seats within one tick: the earlier joiner wins.
  */
 export class OfficeSim {
@@ -247,13 +307,15 @@ export class OfficeSim {
 
   /**
    * REQ-NET-005: a dropped connection keeps the employee and its seat, but inputs and
-   * intents it queued are discarded so the held avatar stands still. Seqs above `lastSeq`
+   * intents it queued are discarded so the held avatar stands still. A running brew is
+   * cancelled so the coffee machine is free for others (REQ-INT-003). Seqs above `lastSeq`
    * are accepted again after a reconnect (the client keeps counting up from its own seq).
    */
   suspend(id: string, lastSeq: number): void {
     if (this.movement.acceptedSeq(id) === null) return;
     this.movement.add(id, lastSeq);
     this.activity.clearQueue(id);
+    this.activity.cancelBrew(id);
   }
 
   input(id: string, raw: unknown): boolean {

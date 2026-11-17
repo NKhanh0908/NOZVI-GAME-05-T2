@@ -11,7 +11,7 @@ const deskSpot = spots.get(DESK)!;
 const sofaSpot = spots.get(SOFA)!;
 
 function body(x: number, z: number, heading = 0): ActivityBody {
-  return { x, z, heading, activity: 'idle', lastSeq: 0, seatId: '' };
+  return { x, z, heading, activity: 'idle', lastSeq: 0, seatId: '', item: '', sips: 0 };
 }
 /** A body standing on a seat's interaction point (in range of it). */
 const near = (seatId: string) => {
@@ -306,5 +306,147 @@ describe('timed breaks and leaving (criterion 5)', () => {
     s.sim.intent('b', { type: 'sit', seatId: DESK });
     s.tick();
     expect(s.get('b').seatId).toBe(DESK);
+  });
+});
+
+describe('coffee routine (REQ-INT-003)', () => {
+  const brewMs = BALANCE.coffee.brewSeconds * 1000;
+  const drinkMs = BALANCE.activity.drinkSeconds * 1000;
+  const atMachine = () => body(coffee.interactionPoint[0], coffee.interactionPoint[2]);
+  /** Lets `id` brew at 0 ms and finish; the controlled clock ends at brewMs. */
+  const brewed = (s: ReturnType<typeof setup>, id: string) => {
+    s.sim.intent(id, { type: 'brew' });
+    s.at(0);
+    s.at(brewMs);
+  };
+
+  it('brew completes after brewSeconds with a full coffee and frees the machine', () => {
+    const s = setup({ a: atMachine() });
+    s.sim.intent('a', { type: 'brew' });
+    s.at(0);
+    expect(s.get('a')).toMatchObject({ activity: 'brewing', item: '', sips: 0 });
+    expect(s.sim.activity.machineBusy).toBe(true);
+    s.at(brewMs - 1);
+    expect(s.get('a')).toMatchObject({ activity: 'brewing', item: '' });
+    s.at(brewMs);
+    expect(s.get('a')).toMatchObject({ activity: 'idle', item: 'coffee', sips: 3 });
+    expect(BALANCE.coffee.sips).toBe(3);
+    expect(s.sim.activity.machineBusy).toBe(false);
+  });
+
+  it('movement during brewing cancels it, hands over nothing and frees the machine', () => {
+    const s = setup({ a: atMachine(), b: atMachine() });
+    s.sim.intent('a', { type: 'brew' });
+    s.at(0);
+    // A zero-axis input keeps the brew going.
+    s.sim.input('a', input(1));
+    s.at(50);
+    expect(s.get('a').activity).toBe('brewing');
+    s.sim.input('a', input(2, { forward: 1 }));
+    s.at(100);
+    expect(s.get('a').activity).toBe('walking');
+    expect(s.sim.activity.machineBusy).toBe(false);
+    s.at(brewMs + 100);
+    expect(s.get('a')).toMatchObject({ item: '', sips: 0 });
+    // The freed machine serves the next employee.
+    s.sim.intent('b', { type: 'brew' });
+    s.at(brewMs + 150);
+    expect(s.get('b').activity).toBe('brewing');
+  });
+
+  it('three sips empty the cup; each sip uses the drink timer and works away from the pantry', () => {
+    const s = setup({ a: atMachine() });
+    brewed(s, 'a');
+    // Move the employee away from the pantry: a sip needs no machine in range.
+    Object.assign(s.get('a'), { x: deskSpot.standPoint[0], z: deskSpot.standPoint[2] });
+    let t = brewMs;
+    for (const left of [2, 1, 0]) {
+      s.sim.intent('a', { type: 'drink' });
+      s.at((t += 50));
+      expect(s.get('a')).toMatchObject({ activity: 'drinking', sips: left + 1 });
+      s.at((t += drinkMs - 1));
+      expect(s.get('a').activity).toBe('drinking');
+      s.at((t += 1));
+      expect(s.get('a')).toMatchObject({ activity: 'idle', sips: left });
+    }
+    expect(s.get('a').item).toBe('');
+    // With the cup gone a drink away from the pantry is refused again.
+    s.sim.intent('a', { type: 'drink' });
+    s.at((t += 50));
+    expect(s.get('a').activity).toBe('idle');
+  });
+
+  it('a sip cancelled by movement costs nothing', () => {
+    const s = setup({ a: atMachine() });
+    brewed(s, 'a');
+    s.sim.intent('a', { type: 'drink' });
+    s.at(brewMs + 50);
+    s.sim.input('a', input(1, { forward: 1 }));
+    s.at(brewMs + 100);
+    s.at(brewMs + 100 + drinkMs);
+    expect(s.get('a')).toMatchObject({ activity: 'walking', item: 'coffee', sips: 3 });
+  });
+
+  it("refuses a second employee's brew while the machine is busy; leave frees it", () => {
+    const s = setup({ a: atMachine(), b: atMachine() });
+    s.sim.intent('a', { type: 'brew' });
+    s.at(0);
+    s.sim.intent('b', { type: 'brew' });
+    s.at(50);
+    expect(s.get('b').activity).toBe('idle');
+    s.sim.remove('a');
+    s.bodies.delete('a');
+    expect(s.sim.activity.machineBusy).toBe(false);
+    s.sim.intent('b', { type: 'brew' });
+    s.at(100);
+    expect(s.get('b').activity).toBe('brewing');
+  });
+
+  it('a dropped connection cancels the brew and frees the machine', () => {
+    const s = setup({ a: atMachine(), b: atMachine() });
+    s.sim.intent('a', { type: 'brew' });
+    s.at(0);
+    s.sim.suspend('a', s.get('a').lastSeq);
+    expect(s.get('a')).toMatchObject({ activity: 'idle', item: '' });
+    s.sim.intent('b', { type: 'brew' });
+    s.at(50);
+    expect(s.get('b').activity).toBe('brewing');
+    s.at(brewMs + 50);
+    expect(s.get('a').item).toBe('');
+    expect(s.get('b')).toMatchObject({ activity: 'idle', item: 'coffee' });
+  });
+
+  it('refuses a brew away from the machine, with a cup in hand, or while seated', () => {
+    const away = setup({ a: near(DESK) });
+    away.sim.intent('a', { type: 'brew' });
+    away.at(0);
+    expect(away.get('a').activity).toBe('idle');
+
+    const holding = setup({ a: atMachine() });
+    brewed(holding, 'a');
+    holding.sim.intent('a', { type: 'brew' });
+    holding.at(brewMs + 50);
+    expect(holding.get('a')).toMatchObject({ activity: 'idle', sips: 3 });
+
+    const seated = setup({ a: near(DESK) });
+    seated.sim.intent('a', { type: 'sit', seatId: DESK });
+    seated.at(0);
+    seated.get('a').x = coffee.interactionPoint[0];
+    seated.get('a').z = coffee.interactionPoint[2];
+    seated.sim.intent('a', { type: 'brew' });
+    seated.at(50);
+    expect(seated.get('a').activity).toBe('sitting');
+  });
+
+  it('keeps the cup while sitting and standing', () => {
+    const s = setup({ a: atMachine() });
+    brewed(s, 'a');
+    Object.assign(s.get('a'), { x: deskSpot.standPoint[0], z: deskSpot.standPoint[2] });
+    s.sim.intent('a', { type: 'sit', seatId: DESK });
+    s.at(brewMs + 50);
+    expect(s.get('a')).toMatchObject({ activity: 'sitting', item: 'coffee', sips: 3 });
+    s.sim.intent('a', { type: 'stand' });
+    s.at(brewMs + 100);
+    expect(s.get('a')).toMatchObject({ activity: 'idle', item: 'coffee', sips: 3 });
   });
 });

@@ -46,7 +46,7 @@ describe('parseIntent', () => {
       type: 'sit',
       seatId: deskSeat,
     });
-    for (const type of ['stand', 'toggleWork', 'drink', 'wave']) {
+    for (const type of ['stand', 'toggleWork', 'drink', 'wave', 'brew']) {
       expect(parseIntent({ type })).toEqual({ type });
     }
   });
