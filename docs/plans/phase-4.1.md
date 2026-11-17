@@ -83,6 +83,26 @@
 - Task 17 compares three options with licence, size, rig compatibility, draw calls and effort: keep the models and add procedural overlays plus unused library clips (default), add another CC0 animation pack, or add or replace presets with other CC0 rigged models. The owner picks one. Replacing the models changes the REQ-AVATAR-001 decision and redoes the avatar render cost work, so it needs an explicit owner choice.
 - Task 18 gives `working` a typing motion on both presets and on remote avatars. It derives from the replicated `activity`; no new network state.
 
+**Task 17 result (T-1218, 2026-11-17).** Measured from the files in `apps/web/public/assets` (GLB JSON parsed in Node): `men_suit.glb` 858 KB, 4 skinned meshes, 10 primitives, 49 joints; `women_suit.glb` 815 KB, 10 primitives, 51 joints; `anim/ual.glb` 3.2 MB, 46 clips, 53 joints. One avatar is 10 draw calls (one per primitive) plus the same 10 in the shadow pass. Sizes of packs that are not in the repository were not measured (the container cannot download them) and are marked "not measured".
+
+| Option                                                                 | Licence                  | Extra download                   | Rig compatibility with `avatar/retarget.ts`                                                          | Draw calls per avatar                        | Effort                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| (a) Keep Modular Suit; unused UAL1 clips plus procedural bone overlays | CC0 (already credited)   | 0 bytes (UAL1 is already loaded) | Already retargeted (49 / 51 to 53 joints); the wave overlay already drives `UpperArmR` / `LowerArmR` | Unchanged: 10                                | Low to medium: one more clip in the retarget list, overlay code in `AvatarView.ts`      |
+| (b) Add another CC0 animation pack (for example UAL2)                  | CC0 (to verify per pack) | Not measured                     | Needs a second skeleton map in `retarget.ts`; UAL2 also needs a clip-extraction step                 | Unchanged: 10 (animation adds no draw calls) | Medium to high: new asset approval, bone map, retarget tests on both rigs               |
+| (c) Add or replace presets with other CC0 rigged models                | CC0 (to verify per pack) | Not measured                     | New rig: new retarget map, or a pack with its own clips; seated-pose alignment redone                | Depends on the model's primitive count       | High: changes the REQ-AVATAR-001 decision, redoes the avatar render-cost work (plan §2) |
+
+Owner choice (2026-11-17, DECISIONS): **(a)**. UAL1 clip inventory (46): `A_TPose`, `Crouch_Fwd_Loop`, `Crouch_Idle_Loop`, `Dance_Loop`, `Death01`, `Driving_Loop`, `Fixing_Kneeling`, `Hit_Chest`, `Hit_Head`, `Idle_Loop`, `Idle_Talking_Loop`, `Idle_Torch_Loop`, `Interact`, `Jog_Fwd_Loop`, `Jump_Land`, `Jump_Loop`, `Jump_Start`, `PickUp_Table`, `Pistol_Aim_Down`, `Pistol_Aim_Neutral`, `Pistol_Aim_Up`, `Pistol_Idle_Loop`, `Pistol_Reload`, `Pistol_Shoot`, `Punch_Cross`, `Punch_Enter`, `Punch_Jab`, `Push_Loop`, `Roll`, `Roll_RM`, `Sitting_Enter`, `Sitting_Exit`, `Sitting_Idle_Loop`, `Sitting_Talking_Loop`, `Spell_Simple_Enter`, `Spell_Simple_Exit`, `Spell_Simple_Idle_Loop`, `Spell_Simple_Shoot`, `Sprint_Loop`, `Swim_Fwd_Loop`, `Swim_Idle_Loop`, `Sword_Attack`, `Sword_Attack_RM`, `Sword_Idle`, `Walk_Formal_Loop`, `Walk_Loop`. In use today: `Idle_Loop`, `Walk_Loop`, `Sitting_Idle_Loop`, `Interact`.
+
+Emote list and what plays each one (base clip: `Idle_Loop` standing, `Sitting_Idle_Loop` seated):
+
+| Emote     | Source                                                    | Standing | Seated              |
+| --------- | --------------------------------------------------------- | -------- | ------------------- |
+| `wave`    | Procedural right-arm override (exists in `AvatarView.ts`) | yes      | yes                 |
+| `dance`   | UAL1 `Dance_Loop` (1.0 s loop, full body)                 | yes      | no (full-body clip) |
+| `think`   | Procedural overlay: right hand to chin, head tilted down  | yes      | yes                 |
+| `laugh`   | Procedural overlay: spine and head shake                  | yes      | yes                 |
+| `stretch` | Procedural overlay: both arms raised overhead             | yes      | yes                 |
+
 ### 3.8 Emotes
 
 - A fixed list of four to five emotes (wave included), approved in task 17. The `emote` intent carries only an id from that list: no free text, so the prototype stays chat-free.
@@ -146,8 +166,8 @@ Each has a default so work is not blocked; say if you want a different one.
 4. **Render budget.** Default: no fixed call count; the gate is "not slower than Phase 3 on the owner's laptop with ten employees", with the numbers recorded per task.
 5. **Post-processing.** Default: anti-aliasing and mild bloom only; dropped if it costs more than 5 FPS on the owner's laptop.
 6. **Layout stays as is.** Confirmed by the owner on 2026-11-16: no furniture is moved, and the room size and ten-employee capacity do not change, so collision, seats and the validator are untouched.
-7. **Avatar option.** Default: keep the Modular Suit models and add procedural overlays plus unused library clips. Task 17 presents the alternatives.
-8. **Emote list.** Default: wave, laugh, think, stretch and dance, final list in task 17. Emotes allowed while standing and seated, not while brewing.
+7. **Avatar option.** Decided by the owner on 2026-11-17: option (a), keep the Modular Suit models and add procedural overlays plus unused UAL1 clips (§3.7, DECISIONS).
+8. **Emote list.** Decided by the owner on 2026-11-17: wave, dance, think, laugh, stretch. Allowed states are set in task 19.
 
 ## 7. Out of scope
 
