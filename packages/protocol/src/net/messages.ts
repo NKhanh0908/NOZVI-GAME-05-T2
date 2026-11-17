@@ -1,3 +1,4 @@
+import { isEmoteId, type EmoteId } from '../activity';
 import { isAvatarId, normalizeOfficeCode, validateName, type AvatarId } from '../identity';
 import { officeLayout } from '../layout/layout';
 import { PROTOCOL_VERSION } from '../version';
@@ -24,10 +25,25 @@ export type InputMessage = {
   yaw: number;
 };
 
-/** `brew` (REQ-INT-003) starts the coffee routine at the coffee machine. */
-export const INTENT_TYPES = ['sit', 'stand', 'toggleWork', 'drink', 'wave', 'brew'] as const;
+/**
+ * `brew` (REQ-INT-003) starts the coffee routine at the coffee machine. `emote`
+ * (REQ-AVATAR-004) plays one emote from the fixed `EMOTES` list; `wave` is the Phase 2
+ * wave (activity `waving`), kept until the client switches to the `wave` emote (T-1222).
+ */
+export const INTENT_TYPES = [
+  'sit',
+  'stand',
+  'toggleWork',
+  'drink',
+  'wave',
+  'brew',
+  'emote',
+] as const;
 export type IntentType = (typeof INTENT_TYPES)[number];
-export type IntentMessage = { type: 'sit'; seatId: string } | { type: Exclude<IntentType, 'sit'> };
+export type IntentMessage =
+  | { type: 'sit'; seatId: string }
+  | { type: 'emote'; emote: EmoteId }
+  | { type: Exclude<IntentType, 'sit' | 'emote'> };
 
 export type JoinOptions = {
   name: string;
@@ -90,13 +106,16 @@ export function parseIntent(
   seatIds: ReadonlySet<string> = SEAT_IDS,
 ): IntentMessage | null {
   if (!isRecord(raw)) return null;
-  const { type, seatId } = raw;
+  const { type, seatId, emote } = raw;
   if (typeof type !== 'string' || !(INTENT_TYPES as readonly string[]).includes(type)) return null;
   if (type === 'sit') {
-    return typeof seatId === 'string' && seatIds.has(seatId) ? { type, seatId } : null;
+    const ok = typeof seatId === 'string' && seatIds.has(seatId) && emote === undefined;
+    return ok ? { type, seatId } : null;
   }
   if (seatId !== undefined) return null;
-  return { type: type as Exclude<IntentType, 'sit'> };
+  if (type === 'emote') return isEmoteId(emote) ? { type, emote } : null;
+  if (emote !== undefined) return null;
+  return { type: type as Exclude<IntentType, 'sit' | 'emote'> };
 }
 
 export type JoinResult = { ok: true; value: JoinOptions } | { ok: false; error: JoinErrorCode };

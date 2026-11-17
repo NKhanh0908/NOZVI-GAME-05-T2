@@ -27,6 +27,53 @@ const SEATED: ReadonlySet<Activity> = new Set(['sitting', 'working', 'resting'])
 const FREE: ReadonlySet<Activity> = new Set(['idle', 'walking']);
 
 export const isSeated = (a: Activity): boolean => SEATED.has(a);
+
+/**
+ * REQ-AVATAR-004: the fixed emote list (owner, DECISIONS 2026-11-17). An `emote` intent
+ * carries exactly one of these ids; there is no free text (the prototype is chat-free).
+ */
+export const EMOTES = ['wave', 'dance', 'think', 'laugh', 'stretch'] as const;
+export type EmoteId = (typeof EMOTES)[number];
+export const isEmoteId = (v: unknown): v is EmoteId =>
+  typeof v === 'string' && (EMOTES as readonly string[]).includes(v);
+/** A replicated `emote` string as an `EmoteId`; `''` (none) and unknown values read as `''`. */
+export const toEmote = (v: string): EmoteId | '' => (isEmoteId(v) ? v : '');
+
+/** Emotes played by a full-body clip (`Dance_Loop`), which a seated pose cannot play. */
+const STANDING_ONLY_EMOTES: ReadonlySet<EmoteId> = new Set(['dance']);
+
+/**
+ * The posture an emote is bound to: `'standing'` for idle and walking, the seated activity
+ * itself while seated, and null where emotes are refused (drinking, waving, brewing).
+ */
+export type EmotePosture = 'standing' | 'sitting' | 'working' | 'resting';
+export function emotePosture(a: Activity): EmotePosture | null {
+  if (FREE.has(a)) return 'standing';
+  return a === 'sitting' || a === 'working' || a === 'resting' ? a : null;
+}
+
+/**
+ * REQ-AVATAR-004 allowed states (DECISIONS 2026-11-17, T-1220): every emote while standing
+ * (idle or walking) and every emote but `dance` while seated. Refused while drinking,
+ * waving (the legacy `wave` intent) or brewing. What the employee holds does not matter:
+ * an emote with a coffee in hand is allowed and leaves the cup and its sips unchanged.
+ * Emotes are a layer over the activity: starting one never changes `activity`.
+ */
+export function canEmote(a: Activity, emote: EmoteId): boolean {
+  const posture = emotePosture(a);
+  return posture !== null && (posture === 'standing' || !STANDING_ONLY_EMOTES.has(emote));
+}
+
+/**
+ * True while a running emote may go on after the activity went from `started` (when the
+ * emote began) to `now`: the posture is the same. Any other activity change (sitting,
+ * standing up, toggling work, drinking, waving, brewing) ends the emote. Movement input
+ * ends it separately, because walking keeps the standing posture.
+ */
+export function emoteContinues(started: Activity, now: Activity): boolean {
+  const posture = emotePosture(started);
+  return posture !== null && posture === emotePosture(now);
+}
 export const statusFor = (a: Activity): 'online' | 'working' =>
   a === 'working' ? 'working' : 'online';
 /** A replicated item string as an `Item`; unknown values read as an empty hand. */

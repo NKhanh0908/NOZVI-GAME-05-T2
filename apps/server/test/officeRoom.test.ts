@@ -331,6 +331,53 @@ describe('OfficeRoom coffee routine (REQ-INT-003)', () => {
   });
 });
 
+describe('OfficeRoom emotes (REQ-AVATAR-004)', () => {
+  const DESK = 'ws_1_seat';
+  const ws1 = officeLayout.workstations.find((w) => w.seat.id === DESK)!;
+  /** Test setup only: ends running emotes as if their time were up (no multi-second waits). */
+  function finishTimers(code: string): void {
+    const room = local(code);
+    room.sim.activity.expire(room.state.employees, Number.MAX_SAFE_INTEGER);
+  }
+
+  it('replicates a standing emote and its end to a second client; bad ids change nothing', async () => {
+    const a = (await join('emote-01')) as Room<OfficeState>;
+    const b = (await join('emote-01', { name: 'Bao' })) as Room<OfficeState>;
+    const seen = () => b.state.employees?.get(a.sessionId);
+    await waitFor(() => seen() !== undefined);
+    expect(seen()).toMatchObject({ activity: 'idle', emote: '' });
+
+    a.send(MSG.intent, { type: 'emote', emote: 'cry' });
+    a.send(MSG.intent, { type: 'emote', emote: 'dance' });
+    await waitFor(() => seen()?.emote === 'dance');
+    expect(seen()).toMatchObject({ activity: 'idle', emote: 'dance' });
+
+    finishTimers('EMOTE-01');
+    await waitFor(() => seen()?.emote === '');
+    expect(seen()!.activity).toBe('idle');
+  });
+
+  it('replicates a seated emote while working; the employee stays working on the seat', async () => {
+    const a = (await join('emote-02')) as Room<OfficeState>;
+    const b = (await join('emote-02', { name: 'Bao' })) as Room<OfficeState>;
+    const server = local('EMOTE-02').state.employees.get(a.sessionId)!;
+    server.x = ws1.interactionPoint[0];
+    server.z = ws1.interactionPoint[2];
+    const seen = () => b.state.employees?.get(a.sessionId);
+    a.send(MSG.intent, { type: 'sit', seatId: DESK });
+    a.send(MSG.intent, { type: 'toggleWork' });
+    await waitFor(() => seen()?.activity === 'working');
+
+    a.send(MSG.intent, { type: 'emote', emote: 'think' });
+    await waitFor(() => seen()?.emote === 'think');
+    expect(seen()).toMatchObject({ activity: 'working', seatId: DESK });
+
+    finishTimers('EMOTE-02');
+    await waitFor(() => seen()?.emote === '');
+    expect(seen()).toMatchObject({ activity: 'working', seatId: DESK });
+  });
+});
+
 describe('OfficeRoom disconnect and reconnect', () => {
   const DESK = 'ws_1_seat';
   const ws1 = officeLayout.workstations.find((w) => w.seat.id === DESK)!;

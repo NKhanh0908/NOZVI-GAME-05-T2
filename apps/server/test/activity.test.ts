@@ -11,7 +11,7 @@ const deskSpot = spots.get(DESK)!;
 const sofaSpot = spots.get(SOFA)!;
 
 function body(x: number, z: number, heading = 0): ActivityBody {
-  return { x, z, heading, activity: 'idle', lastSeq: 0, seatId: '', item: '', sips: 0 };
+  return { x, z, heading, activity: 'idle', lastSeq: 0, seatId: '', item: '', sips: 0, emote: '' };
 }
 /** A body standing on a seat's interaction point (in range of it). */
 const near = (seatId: string) => {
