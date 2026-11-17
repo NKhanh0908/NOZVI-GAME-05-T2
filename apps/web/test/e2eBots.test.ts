@@ -9,6 +9,8 @@ describe('e2e bot wire constants', () => {
       protocolVersion: PROTOCOL_VERSION,
       maxClients: BALANCE.net.maxClients,
       netProfileMinutes: BALANCE.net.testProfile.runMinutes,
+      tvConvergenceSeconds: BALANCE.tv.convergenceSeconds,
+      tvDriftTargetSeconds: BALANCE.tv.driftTargetSeconds,
     });
   });
 });
