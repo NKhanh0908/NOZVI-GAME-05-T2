@@ -13,6 +13,7 @@ export type YtPlayer = {
   stopVideo(): void;
   setPlaybackRate(rate: number): void;
   getCurrentTime(): number | undefined;
+  getDuration(): number | undefined;
   mute(): void;
   unMute(): void;
   destroy(): void;
@@ -116,6 +117,10 @@ export class YouTubeTvPlayer implements TvPlayer {
     const t = this.player?.getCurrentTime();
     if (typeof t === 'number' && Number.isFinite(t)) this.lastTime = t;
     return this.lastTime;
+  }
+  getDuration(): number | null {
+    const d = this.player?.getDuration();
+    return typeof d === 'number' && Number.isFinite(d) && d > 0 ? d : null;
   }
   mute(): void {
     this.muted = true;

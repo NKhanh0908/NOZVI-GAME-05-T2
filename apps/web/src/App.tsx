@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Game } from './game/Game';
 import type { Prompt as P } from './game/interaction/InteractionController';
 import { Prompt } from './ui/Prompt';
@@ -6,6 +6,7 @@ import { EmployeeList } from './ui/EmployeeList';
 import type { EmployeeRoster } from './ui/employeeRoster';
 import { JoinScreen, type JoinResult } from './ui/JoinScreen';
 import { ConnectionBanner } from './ui/ConnectionBanner';
+import { TvPanel } from './ui/TvPanel';
 import {
   Connection,
   serverUrl,
@@ -22,6 +23,12 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [joined, setJoined] = useState<Session | null>(null);
   const [roster, setRoster] = useState<EmployeeRoster | null>(null);
+  const [game, setGame] = useState<Game | null>(null);
+  const subscribeTv = useCallback(
+    (onChange: () => void) => game?.tvMode.subscribe(onChange) ?? (() => undefined),
+    [game],
+  );
+  const tvOpen = useSyncExternalStore(subscribeTv, () => game?.tvMode.isOpen ?? false);
   const [connection] = useState(() => new Connection(serverUrl(import.meta.env)));
   const [rejoinError, setRejoinError] = useState<ConnectionError | null>(null);
   const status = useSyncExternalStore(
@@ -81,10 +88,12 @@ export function App() {
     });
     game.start();
     setRoster(game.roster);
+    setGame(game);
     return () => {
       offStatus();
       offRoom();
       setRoster(null);
+      setGame(null);
       clearTimeout(toastTimer);
       game.dispose();
     };
@@ -94,9 +103,22 @@ export function App() {
   if (!joined) return <JoinScreen onJoin={join} />;
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div ref={hostRef} data-testid="game-host" style={{ width: '100%', height: '100%' }} />
+      {/* isolation: keeps the canvas / TV layer z-indexes inside the host, under the HUD. */}
+      <div
+        ref={hostRef}
+        data-testid="game-host"
+        style={{ width: '100%', height: '100%', isolation: 'isolate' }}
+      />
       <Prompt prompt={prompt} />
       {roster && <EmployeeList roster={roster} />}
+      {game && tvOpen && (
+        <TvPanel
+          provider={game.tvProvider}
+          controls={game.tvControls}
+          source={game.tvControls}
+          onClose={() => game.tvMode.exit()}
+        />
+      )}
       <ConnectionBanner
         status={status}
         reconnect={reconnect}

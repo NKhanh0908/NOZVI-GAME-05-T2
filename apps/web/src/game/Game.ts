@@ -21,6 +21,11 @@ import { TvScreen } from '../tv/TvScreen';
 import { TvCssLayer } from '../tv/TvCssLayer';
 import { FakeTvPlayer, type TvPlayer } from '../tv/player';
 import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
+import { FakeVideoProvider, YouTubeProvider, type VideoProvider } from '../tv/provider';
+import { LocalTvControls } from '../tv/controls';
+import { TvMode } from '../tv/TvMode';
+
+const IDLE_INPUT = { forward: 0, right: 0, run: false } as const;
 
 export class Game {
   readonly scene = new THREE.Scene();
@@ -36,6 +41,16 @@ export class Game {
     tvPlayerKind(import.meta.env) === 'fake'
       ? new FakeTvPlayer(this.tvLayer.container)
       : new YouTubeTvPlayer(this.tvLayer.container);
+  /** REQ-TV-003: catalog and URL parser; the fake one keeps e2e off ytimg.com thumbnails. */
+  readonly tvProvider: VideoProvider =
+    tvPlayerKind(import.meta.env) === 'fake' ? new FakeVideoProvider() : new YouTubeProvider();
+  /** P4.8: panel controls drive the local player only; P4.9 replaces this with room commands. */
+  readonly tvControls = new LocalTvControls(
+    this.tvPlayer,
+    (id) => this.tvProvider.getVideo(id)?.duration ?? null,
+  );
+  /** REQ-TV-002: TV mode makes the screen clickable and hands focus back on close. */
+  readonly tvMode = new TvMode((open) => this.applyTvMode(open));
   private readonly nameplate = new Nameplate();
   readonly player = new Player();
   readonly input = new KeyboardInput(window);
@@ -48,6 +63,11 @@ export class Game {
   private promptText: string | null = null;
   // WASD while seated needs no handler: movement inputs reach the server, which stands up.
   private readonly keydown = (e: KeyboardEvent): void => {
+    if (this.tvMode.isOpen) {
+      // Esc closes the panel while the app has focus; other game keys wait for Close.
+      if (e.code === 'Escape') this.tvMode.exit();
+      return;
+    }
     if (e.code === 'KeyE' && !e.repeat) this.controller.press();
     if (e.code === 'KeyG' && !e.repeat) this.controller.wave();
   };
@@ -92,6 +112,7 @@ export class Game {
           const result = handleAction(target, this.player, this.controller);
           if (result.message) this.onToast?.(result.message);
         },
+        onTv: () => this.tvMode.enter(),
       },
     );
     this.unbindPrediction = this.bindRoom(netRoom);
@@ -170,6 +191,8 @@ export class Game {
         getTv: () => this.tvInfo(),
         // P4.6: e2e drives the player directly until the room binding lands (P4.9).
         getTvPlayer: () => this.tvPlayer,
+        isTvMode: () => this.tvMode.isOpen,
+        getTvView: () => this.tvControls.view(),
       };
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
@@ -177,6 +200,9 @@ export class Game {
     // Stacking: CSS3D TV layer (0) under the WebGL canvas (1) under the labels (2).
     this.renderer.domElement.style.position = 'relative';
     this.renderer.domElement.style.zIndex = '1';
+    // Focusable without a tab stop, so closing TV mode can take focus back from the iframe.
+    this.renderer.domElement.tabIndex = -1;
+    this.renderer.domElement.style.outline = 'none';
     host.appendChild(this.renderer.domElement);
     this.tvLayer.mount(host);
     this.labelRenderer.domElement.style.cssText =
@@ -236,6 +262,20 @@ export class Game {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * REQ-TV-002: in TV mode the screen element takes clicks, and the WebGL canvas above it
+   * lets pointer events through (so no camera orbit until Close). Leaving TV mode puts
+   * both back and returns keyboard focus from a clicked iframe to the game canvas.
+   */
+  private applyTvMode(open: boolean): void {
+    this.tvLayer.container.style.pointerEvents = open ? 'auto' : 'none';
+    this.renderer.domElement.style.pointerEvents = open ? 'none' : '';
+    if (open) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) active.blur();
+    this.renderer.domElement.focus({ preventScroll: true });
+  }
+
   /** Renders two frames: one with the shadow pass, one reusing the shadow map (main pass only). */
   private measureDrawCalls(): { total: number; main: number; shadow: number; triangles: number } {
     const shadowMap = this.renderer.shadowMap;
@@ -254,9 +294,10 @@ export class Game {
     this.renderer.setAnimationLoop(() => {
       this.timer.update();
       const dt = Math.min(this.timer.getDelta(), 0.1);
-      const input = this.input.read();
+      // TV mode: the panel has the keyboard (URL field); the player stands still until Close.
+      const input = this.tvMode.isOpen ? IDLE_INPUT : this.input.read();
       this.player.update(input, this.rig.yaw, dt);
-      const prompt = this.controller.currentPrompt();
+      const prompt = this.tvMode.isOpen ? null : this.controller.currentPrompt();
       const text = prompt?.text ?? null;
       if (text !== this.promptText) {
         this.promptText = text;
@@ -275,6 +316,7 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    this.tvMode.exit();
     this.renderer.setAnimationLoop(null);
     this.unbindPrediction();
     this.input.dispose();
@@ -318,6 +360,7 @@ export class Game {
       layerSize: { width: layer.clientWidth, height: layer.clientHeight },
       screenRect: { x: box.x, y: box.y, width: box.width, height: box.height },
       pointerEvents: getComputedStyle(this.tvLayer.container).pointerEvents,
+      canvasPointerEvents: getComputedStyle(this.renderer.domElement).pointerEvents,
       mounted: layer.isConnected && this.tvLayer.container.isConnected,
     };
   }

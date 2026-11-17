@@ -19,6 +19,7 @@ const METHODS: (keyof TvPlayer)[] = [
   'stop',
   'setRate',
   'getTime',
+  'getDuration',
   'mute',
   'unmute',
   'isMuted',
@@ -127,6 +128,7 @@ function stubYouTube() {
         stopVideo: vi.fn(),
         setPlaybackRate: vi.fn(),
         getCurrentTime: vi.fn(() => 12.5),
+        getDuration: vi.fn(() => 0),
         mute: vi.fn(),
         unMute: vi.fn(),
         destroy: vi.fn(),
@@ -229,6 +231,10 @@ describe('YouTubeTvPlayer', () => {
     expect(api.unMute).toHaveBeenCalledOnce();
     expect(p.isMuted()).toBe(false);
     expect(p.getTime()).toBe(12.5);
+    // Duration is null until the IFrame API reports a positive length.
+    expect(p.getDuration()).toBeNull();
+    (api.getDuration as ReturnType<typeof vi.fn>).mockReturnValue(596.5);
+    expect(p.getDuration()).toBe(596.5);
   });
 
   it('forwards errors and the ended state, and dispose destroys the player', async () => {

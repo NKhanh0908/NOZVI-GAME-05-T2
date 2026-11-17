@@ -19,6 +19,8 @@ export interface TvPlayer {
   /** Playback rate; 1 is normal speed, the drift sync nudges around it. */
   setRate(rate: number): void;
   getTime(): number;
+  /** Video length in seconds, or null while unknown (nothing loaded, metadata pending). */
+  getDuration(): number | null;
   mute(): void;
   unmute(): void;
   isMuted(): boolean;
@@ -125,6 +127,10 @@ export class FakeTvPlayer implements TvPlayer {
   getTime(): number {
     if (!this.playing) return this.baseTime;
     return this.baseTime + ((this.now() - this.baseNow) / 1000) * this.rate;
+  }
+  /** The fake has no media metadata; callers fall back to the catalog duration. */
+  getDuration(): number | null {
+    return null;
   }
   mute(): void {
     this.muted = true;
