@@ -17,6 +17,8 @@ export type RemoteView = {
   setActivity(activity: Activity): void;
   update(dt: number): void;
   dispose(): void;
+  /** Typing overlay weight, 0 to 1 (T-1219). */
+  readonly typing?: number;
 };
 /** The parts of `Nameplate` a remote avatar uses. */
 export type RemoteNameplate = {
@@ -45,6 +47,8 @@ export type RemoteInfo = {
   connected: boolean;
   /** The nameplate status text as drawn. */
   status: string;
+  /** Typing overlay weight as drawn, 0 to 1 (T-1219). */
+  typing: number;
 };
 
 type Remote = {
@@ -245,6 +249,7 @@ export class RemoteAvatars {
       model: r.view ? 'avatar' : 'capsule',
       connected: r.employee.connected !== false,
       status: r.status,
+      typing: r.view?.typing ?? 0,
     }));
   }
 

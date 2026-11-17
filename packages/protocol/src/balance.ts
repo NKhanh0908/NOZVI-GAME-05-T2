@@ -18,6 +18,15 @@ export const BALANCE = {
     durationSeconds: { wave: WAVE_SECONDS, dance: 4, think: 3, laugh: 2.5, stretch: 3 },
     minGapSeconds: 1,
   },
+  /**
+   * Client-only avatar overlays (plan phase-4.1 §3.7, owner option (a)). Directions are
+   * weights of the avatar's forward / up / right axes; the overlay blends in and out over
+   * `activity.crossFadeSeconds`.
+   */
+  avatar: {
+    /** REQ-AVATAR-002 typing while `working` (T-1219): alternating taps, Hz per hand. */
+    typing: { tapHz: 3.5, tapDepth: 0.35, reach: 0.6, elbowOut: 0.18, handsIn: 0.32 },
+  },
   movement: { walkSpeed: 2.0, runSpeed: 4.0, capsuleRadius: 0.3, turnRate: 12 },
   camera: {
     fovDeg: 60,

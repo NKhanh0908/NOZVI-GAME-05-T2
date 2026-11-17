@@ -121,6 +121,11 @@ export class Player {
     return this.view?.hasFiniteBones() ?? false;
   }
 
+  /** Typing overlay weight of the loaded avatar, 0 to 1 (T-1219). */
+  get typing(): number {
+    return this.view?.typing ?? 0;
+  }
+
   /**
    * Fades the player mesh (e.g. when the camera is close); 1 is fully opaque. Only the opacity
    * uniform changes: the materials always sit in the transparent pass with depth writes on, so a

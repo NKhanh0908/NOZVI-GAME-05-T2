@@ -3,12 +3,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { BALANCE, type Activity, type AvatarId } from '@office/protocol';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
+import { applyTyping, approach, findRig, type Rig } from './overlays';
 
 export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   idle: { clip: 'Idle_Loop', loop: true },
   walking: { clip: 'Walk_Loop', loop: true },
   sitting: { clip: 'Sitting_Idle_Loop', loop: true },
-  working: { clip: 'Sitting_Idle_Loop', loop: true },
+  working: { clip: 'Sitting_Idle_Loop', loop: true }, // Typing overlay on top (T-1219).
   resting: { clip: 'Sitting_Idle_Loop', loop: true },
   drinking: { clip: 'Interact', loop: false },
   waving: { clip: 'Idle_Loop', loop: true }, // Arm is overridden procedurally.
@@ -60,6 +61,11 @@ export class AvatarView {
   private current: THREE.AnimationAction | null = null;
   private activity: Activity = 'idle';
   private waveTime = 0;
+  /** The view's own clock (s) for procedural overlays. */
+  private clock = 0;
+  /** Blend weight of the typing overlay, 0 to 1 (T-1219). */
+  private typingWeight = 0;
+  private readonly rig: Rig;
 
   private constructor(
     model: THREE.Object3D,
@@ -68,6 +74,7 @@ export class AvatarView {
     private readonly materials: THREE.Material[] = [],
   ) {
     this.root.add(model);
+    this.rig = findRig(bones);
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.play('idle');
@@ -141,6 +148,8 @@ export class AvatarView {
   private fadeTo(clip: string, loop: boolean): THREE.AnimationAction | null {
     const next = this.actions.get(clip);
     if (!next) return null;
+    // Same looping clip (sitting ↔ working, waving ↔ idle): keep its phase, no restart pop.
+    if (next === this.current && loop && next.loop === THREE.LoopRepeat) return next;
     next.reset();
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
     next.clampWhenFinished = !loop;
@@ -151,8 +160,18 @@ export class AvatarView {
     return next;
   }
 
+  /** Typing overlay weight (0 to 1); e2e reads it through the remote list. */
+  get typing(): number {
+    return this.typingWeight;
+  }
+
   update(dt: number): void {
     this.mixer.update(dt);
+    this.clock += dt;
+    // REQ-AVATAR-002 (T-1219): typing blends in and out over the activity cross-fade.
+    const typing = this.activity === 'working' ? 1 : 0;
+    this.typingWeight = approach(this.typingWeight, typing, dt, BALANCE.activity.crossFadeSeconds);
+    applyTyping(this.root, this.rig, this.clock, this.typingWeight);
     if (this.activity === 'waving' && this.waveTime > 0) {
       this.waveTime -= dt;
       // GLTFLoader sanitizes the exported UpperArm.R / LowerArm.R names by removing dots.

@@ -38,6 +38,8 @@ Phase 2 identity: `apps/web/src/ui/JoinScreen.tsx` validates the join form, show
 
 Phase 4.1 UI tokens (T-1159): `apps/web/src/ui/tokens.css` is the only place colours, spacing, radius, type scale and shadows are defined (`--ov-*`, palette from the layout `palette`); `ui/tokens.ts` gives typed `var()` references for inline styles; `ui/ui.css` holds buttons, inputs and the `:focus-visible` ring (both imported in `main.tsx`). Every 2D surface (join, list, prompt, toast, banner, TV panel) reads them. Tests: `apps/web/test/uiTokens.test.ts` (no colour literals, tokens resolve, contrast 4.5:1).
 
+Phase 4.1 avatar overlays (T-1219): `apps/web/src/game/avatar/overlays.ts` holds procedural bone overlays applied by `AvatarView.update` after the mixer (`findRig`, `aimBone`, `applyTyping` while `working`; tunables `BALANCE.avatar`). Tests: `apps/web/test/avatarClips.test.ts`, e2e `typing.spec.ts`.
+
 ## Do not read (generated, vendored or binary)
 
 `dist/`, `build/`, `coverage/`, `node_modules/`, `assets/` binaries, `except/` images, `.token-ledger/`, lockfiles — unless the task is specifically about them.

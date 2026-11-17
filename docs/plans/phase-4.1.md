@@ -157,6 +157,8 @@ Emote list and what plays each one (base clip: `Idle_Loop` standing, `Sitting_Id
 | `laugh`   | Procedural overlay: spine and head shake                  | yes      | yes                 |
 | `stretch` | Procedural overlay: both arms raised overhead             | yes      | yes                 |
 
+**Task 18 result (T-1219, 2026-11-17).** `working` keeps `Sitting_Idle_Loop` and adds a procedural typing overlay (`apps/web/src/game/avatar/overlays.ts`, `applyTyping`): both upper arms reach forward, forearms point at the keyboard and the hands tap in alternation; values in `BALANCE.avatar.typing` (client presentation only). The overlay weight ramps 0 → 1 → 0 over `BALANCE.activity.crossFadeSeconds` (0.25 s) on entering and leaving `working`, so a weight of 0 leaves the clip pose untouched; switching between `sitting` and `working` no longer restarts the shared seated loop (no pop). Local and remote avatars use the same `AvatarView`, driven by the replicated `activity`; no protocol or server change. Evidence: `avatarClips.test.ts` (both presets: arms differ from seated idle and move over time, finite bones, back on the seated idle pose within the cross-fade); two-page `e2e/typing.spec.ts` (local `getTyping()` and the remote list's `typing` reach 1 while working and 0 after). Draw calls on the observing page with one remote at the desk: 176 total (62 main, 114 shadow), 39,846 triangles both before and while typing — the overlay only moves bones.
+
 ### 3.8 Emotes
 
 - A fixed list of four to five emotes (wave included), approved in task 17. The `emote` intent carries only an id from that list: no free text, so the prototype stays chat-free.

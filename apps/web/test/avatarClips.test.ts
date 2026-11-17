@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { BALANCE } from '@office/protocol';
 import { AvatarView, CLIP_FOR } from '../src/game/avatar/AvatarView';
 import { Player } from '../src/game/player';
 
@@ -233,3 +234,64 @@ it('loads each avatar GLB once and clones it for further views', async () => {
   expect(b.root.parent).toBeNull();
   expect(a.hasFiniteBones()).toBe(true);
 });
+
+const ARM_BONES = ['UpperArmL', 'LowerArmL', 'HandL', 'UpperArmR', 'LowerArmR', 'HandR'];
+const bone = (v: AvatarView, name: string) => v.root.getObjectByName(name) as THREE.Bone;
+/** Largest angle (rad) between the arm bones of two views of the same preset. */
+const armDifference = (a: AvatarView, b: AvatarView) =>
+  Math.max(...ARM_BONES.map((n) => bone(a, n).quaternion.angleTo(bone(b, n).quaternion)));
+const armPose = (v: AvatarView) => ARM_BONES.map((n) => bone(v, n).quaternion.clone());
+
+it.each(['men_suit', 'women_suit'] as const)(
+  'types while working on %s and returns to the seated idle pose within the cross-fade',
+  async (avatarId) => {
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(loadLocalGltf);
+    // Same clip timeline on both views: one sits, the other works (T-1219).
+    const seated = await AvatarView.load(avatarId);
+    const working = await AvatarView.load(avatarId);
+    for (const v of [seated, working]) v.root.rotation.y = 1.1;
+    seated.setActivity('sitting');
+    working.setActivity('working');
+    const step = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        seated.update(1 / 60);
+        working.update(1 / 60);
+        expect(working.hasFiniteBones()).toBe(true);
+      }
+    };
+    step(150); // Sitting_Enter, then the seated loop with the overlay fully in.
+    expect(working.typing).toBe(1);
+    expect(seated.typing).toBe(0);
+    expect(armDifference(seated, working)).toBeGreaterThan(0.3);
+    // The hands move over time (alternating taps), not a frozen pose.
+    const first = armPose(working);
+    step(7);
+    const second = armPose(working);
+    expect(Math.max(...first.map((q, i) => q.angleTo(second[i]!)))).toBeGreaterThan(0.02);
+    // Hands reach forward toward the keyboard, in front of the shoulders.
+    working.root.updateMatrixWorld(true);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      working.root.getWorldQuaternion(new THREE.Quaternion()),
+    );
+    for (const side of ['L', 'R']) {
+      const reach = bone(working, `Hand${side}`)
+        .getWorldPosition(new THREE.Vector3())
+        .sub(bone(working, `UpperArm${side}`).getWorldPosition(new THREE.Vector3()))
+        .dot(forward);
+      expect(reach).toBeGreaterThan(0.25);
+    }
+
+    // Stop working: the arms are back on the seated idle pose once the cross-fade is over.
+    working.setActivity('sitting');
+    const frames = Math.ceil(BALANCE.activity.crossFadeSeconds * 60) + 1;
+    const half = Math.floor(frames / 2);
+    step(half);
+    expect(working.typing).toBeGreaterThan(0);
+    expect(armDifference(seated, working)).toBeGreaterThan(1e-3);
+    step(frames - half);
+    expect(working.typing).toBe(0);
+    expect(armDifference(seated, working)).toBeLessThan(1e-4);
+    seated.dispose();
+    working.dispose();
+  },
+);

@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Added
 
+- Typing while working (T-1219, REQ-AVATAR-002): a procedural forearm and hand overlay on the seated loop (`apps/web/src/game/avatar/overlays.ts`, `BALANCE.avatar.typing`) on local and remote avatars, blended over the 0.25 s activity cross-fade and derived from the replicated `activity`; sitting ↔ working keeps the seated loop's phase; dev hook `getTyping()` and `typing` in `getRemotes()`; unit tests on both presets and two-page `e2e/typing.spec.ts`.
+
 - Phase 4.1 2D UI restyle (T-1159): shared design tokens `apps/web/src/ui/tokens.css` (SPEC palette colours, spacing, radius, type scale, shadows) with typed references in `ui/tokens.ts` and base control styles in `ui/ui.css`; join screen, employee list, prompt, toast, connection banner, TV panel and key hint restyled from them, visible `:focus-visible` rings on every control, text contrast at least 4.5:1 checked in `test/uiTokens.test.ts` (values in `docs/plans/phase-4.1.md` §3.6). No behaviour, test id or accessible-name changes.
 
 - Phase 4.1 render baseline (T-1146): render-quality switch `VITE_RENDER_QUALITY` (`high` default, `e2e` set by Playwright; `apps/web/src/game/renderQuality.ts`, dev hook `getRenderQuality()`), env-gated evidence spec `e2e/renderBaseline.spec.ts` (`RENDER_BASELINE=1`: draw calls and triangles for the seven visual views with 1, 3 and 10 employees), the visual poses shared in `e2e/poses.ts`; baseline table, inventory of what is drawn and the phase budget rule in `docs/plans/phase-4.1.md` §3.1.1.

@@ -194,6 +194,7 @@ export class Game {
           this.rig.yaw = yaw;
         },
         avatarOk: () => this.player.viewFinite(),
+        getTyping: () => this.player.typing,
         getRemotes: () => this.remotes.list(),
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
