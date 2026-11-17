@@ -19,6 +19,8 @@ import { EmployeeRoster } from '../ui/employeeRoster';
 import { bindPrediction, employeeSource, roomOccupancy, type OfficeRoomHandle } from '../net';
 import { TvScreen } from '../tv/TvScreen';
 import { TvCssLayer } from '../tv/TvCssLayer';
+import { FakeTvPlayer, type TvPlayer } from '../tv/player';
+import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
 
 export class Game {
   readonly scene = new THREE.Scene();
@@ -29,6 +31,11 @@ export class Game {
   /** REQ-TV-001: WebGL bezel and occluder, plus the CSS3D layer holding the screen element. */
   readonly tvScreen = new TvScreen(officeLayout);
   readonly tvLayer = new TvCssLayer(this.tvScreen);
+  /** P4.6: the video player inside the TV screen; e2e builds use the fake one. */
+  readonly tvPlayer: TvPlayer =
+    tvPlayerKind(import.meta.env) === 'fake'
+      ? new FakeTvPlayer(this.tvLayer.container)
+      : new YouTubeTvPlayer(this.tvLayer.container);
   private readonly nameplate = new Nameplate();
   readonly player = new Player();
   readonly input = new KeyboardInput(window);
@@ -161,6 +168,8 @@ export class Game {
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
         getTv: () => this.tvInfo(),
+        // P4.6: e2e drives the player directly until the room binding lands (P4.9).
+        getTvPlayer: () => this.tvPlayer,
       };
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
@@ -282,6 +291,7 @@ export class Game {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
+    this.tvPlayer.dispose();
     this.tvLayer.dispose();
     this.tvScreen.dispose();
   }

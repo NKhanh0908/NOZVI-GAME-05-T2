@@ -72,3 +72,59 @@ test('the TV screen sits on the entertainment wall and the CSS3D layer follows t
   if (process.env.TV_SHOT) await page.screenshot({ path: process.env.TV_SHOT });
   await expect.poll(async () => Math.abs((await getYaw(page)) - yaw0)).toBeGreaterThan(0.2);
 });
+
+type PlayerView = {
+  kind: string;
+  time: number;
+  muted: boolean;
+  state: { videoId: string | null; playing: boolean };
+};
+type PlayerHook = {
+  getTvPlayer(): {
+    kind: string;
+    load(id: string, t: number): void;
+    play(): void;
+    pause(): void;
+    getTime(): number;
+    isMuted(): boolean;
+    state: { videoId: string | null; playing: boolean };
+  };
+};
+const playerView = (page: Page) =>
+  page.evaluate((): PlayerView => {
+    const p = (window as unknown as { __office: PlayerHook }).__office.getTvPlayer();
+    return { kind: p.kind, time: p.getTime(), muted: p.isMuted(), state: p.state };
+  });
+const drive = (page: Page, action: 'play' | 'pause' | ['load', string, number]) =>
+  page.evaluate((a) => {
+    const p = (window as unknown as { __office: PlayerHook }).__office.getTvPlayer();
+    if (a === 'play') p.play();
+    else if (a === 'pause') p.pause();
+    else p.load(a[1], a[2]);
+  }, action);
+
+// T-1140: e2e builds use the fake TV player and never contact YouTube.
+test('the TV uses the fake player in e2e and makes no request to YouTube', async ({ page }) => {
+  const youtube: string[] = [];
+  page.on('request', (r) => {
+    const host = new URL(r.url()).hostname;
+    if (/(^|\.)(youtube\.com|youtube-nocookie\.com|ytimg\.com|googlevideo\.com)$/.test(host))
+      youtube.push(r.url());
+  });
+  await join(page, 'TvPlayer', 'TV-E2E-02');
+  const before = await playerView(page);
+  expect(before.kind).toBe('fake');
+  expect(before.muted).toBe(true);
+  expect(before.state.videoId).toBeNull();
+
+  await drive(page, ['load', 'AAAAAAAAAAA', 5]);
+  await drive(page, 'play');
+  await expect.poll(async () => (await playerView(page)).time).toBeGreaterThan(5.3);
+  await drive(page, 'pause');
+  const paused = (await playerView(page)).time;
+  await page.waitForTimeout(300);
+  expect((await playerView(page)).time).toBe(paused);
+  await expect(page.getByTestId('tv-fake-player')).toHaveText(/AAAAAAAAAAA/);
+
+  expect(youtube).toEqual([]);
+});
