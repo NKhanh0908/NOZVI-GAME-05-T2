@@ -217,6 +217,9 @@ export class ActivitySim {
         this.timers.set(id, nowMs + BALANCE.activity.waveSeconds * 1000);
         return true;
       }
+      case 'emote':
+        // REQ-AVATAR-004: refused until the server handles emotes (T-1221).
+        return false;
     }
   }
 

@@ -107,6 +107,7 @@ Emote list and what plays each one (base clip: `Idle_Loop` standing, `Sitting_Id
 
 - A fixed list of four to five emotes (wave included), approved in task 17. The `emote` intent carries only an id from that list: no free text, so the prototype stays chat-free.
 - The server owns the emote like it owns wave today: it starts it, runs the timer from `BALANCE.emote`, enforces a minimum gap per employee and restores the previous activity. Task 19 decides whether emotes are allowed while seated, while holding a coffee and while brewing.
+- Task 19 result (T-1220, 2026-11-17): intent `{ type: 'emote', emote }`, replicated `EmployeeState.emote` as a layer over `activity`, `BALANCE.emote`, `PROTOCOL_VERSION` 5 (SPEC REQ-AVATAR-004, DECISIONS).
 - The client adds an emote button and a small menu to the 2D UI and plays the emote on local and remote avatars from replicated state.
 
 ## 4. Tasks
@@ -167,7 +168,7 @@ Each has a default so work is not blocked; say if you want a different one.
 5. **Post-processing.** Default: anti-aliasing and mild bloom only; dropped if it costs more than 5 FPS on the owner's laptop.
 6. **Layout stays as is.** Confirmed by the owner on 2026-11-16: no furniture is moved, and the room size and ten-employee capacity do not change, so collision, seats and the validator are untouched.
 7. **Avatar option.** Decided by the owner on 2026-11-17: option (a), keep the Modular Suit models and add procedural overlays plus unused UAL1 clips (§3.7, DECISIONS).
-8. **Emote list.** Decided by the owner on 2026-11-17: wave, dance, think, laugh, stretch. Allowed states are set in task 19.
+8. **Emote list.** Decided by the owner on 2026-11-17: wave, dance, think, laugh, stretch. Allowed states (task 19, DECISIONS): standing and seated, not while drinking, waving or brewing; dance standing only.
 
 ## 7. Out of scope
 

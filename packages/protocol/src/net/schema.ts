@@ -18,6 +18,11 @@ export const EmployeeState = schema(
     item: t.string().default(''),
     /** Sips left in the held coffee; 0 when the hand is empty. */
     sips: t.uint8().default(0),
+    /**
+     * REQ-AVATAR-004: the running `EmoteId` from `activity.ts`, or empty string. A layer over
+     * `activity`, which keeps its value while the emote plays.
+     */
+    emote: t.string().default(''),
     /** Empty string when not seated. */
     seatId: t.string().default(''),
     /** False while the server holds the slot for a reconnect. */
