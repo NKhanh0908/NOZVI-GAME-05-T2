@@ -21,7 +21,7 @@ function fakeRoom(sessionId = 'me', tv: Partial<Tv> = {}) {
   const listeners = new Set<(s: { tv?: Tv }) => void>();
   const notices = new Set<(n: TvRateLimitedNotice) => void>();
   const sent: TvCommand[] = [];
-  const state: { tv: Tv } = {
+  const state: { tv: Tv; employees?: Map<string, object> } = {
     tv: { provider: 'youtube', status: 'idle', currentTime: 0, updatedAt: 0, ...tv },
   };
   const onStateChange = Object.assign(
@@ -299,6 +299,25 @@ describe('TvBinding drift and clock (REQ-TV-006, OQ-023)', () => {
     r.patch({ status: 'playing', currentTime: 64, updatedAt: h.server() });
     h.advance(2000, false);
     expect(h.binding.expected()).toBeCloseTo(66, 6);
+  });
+
+  it('waits for the full state when attached before it arrived (Colyseus join order)', () => {
+    const h = harness();
+    h.advance(10_000, false);
+    // Joined, but the full state is not decoded yet: schema defaults, no employees.
+    const r = fakeRoom('late');
+    r.state.employees = new Map();
+    h.binding.attach(r.room);
+    expect(h.player.state.videoId).toBeNull();
+    // The full state arrives: the video started 10 s ago and this session is in the room.
+    h.advance(30, false);
+    r.state.employees.set('late', {});
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() - 10_030 });
+    // The old stamp is not a clock sample: the joiner seeks to 10 s, not to 0.
+    expect(h.binding.clock.offsetMs).toBe(0);
+    expect(h.player.state).toMatchObject({ videoId: ID_A, playing: true });
+    expect(h.player.getTime()).toBeCloseTo(10.03, 6);
+    expect(h.binding.expected()).toBeCloseTo(10.03, 6);
   });
 
   it('the controller reports the end of the video as a pause; other clients do not', () => {

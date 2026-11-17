@@ -23,7 +23,7 @@ export const TV_SYNC_INTERVAL_MS = 1000;
 
 /** The replicated `tv` fields as decoded (`readTv` normalizes them). */
 type TvFields = Parameters<typeof readTv>[0];
-type TvState = { tv?: TvFields } | undefined;
+type TvState = { tv?: TvFields; employees?: { get(id: string): unknown } } | undefined;
 
 type StateChange<S> = ((callback: (state: S) => void) => unknown) & {
   remove(callback: (state: S) => void): void;
@@ -130,13 +130,23 @@ export class TvBinding implements TvControls, TvViewSource {
     this.cleanup.push(player.onError((code) => this.failed(code)));
   }
 
-  /** Binds to a joined or resumed room; the first snapshot is applied at once. */
+  /**
+   * Binds to a joined or resumed room; the first server snapshot is applied at once.
+   *
+   * Colyseus resolves a join (and a reconnect) before the full state arrives, so the room
+   * can still hold the schema defaults here. Those are not the server's state: until the
+   * state names this session's employee (the server adds it before the join reply) the
+   * binding waits, so the full state that follows counts as the first snapshot. Its old
+   * `updatedAt` is never taken as a clock sample, which would make a late joiner's offset
+   * lag the server by the age of the last command (and seek it that far behind).
+   */
   attach(room: TvRoom): void {
     this.detach();
     this.room = room;
     let first = true;
     const onPatch = (state: TvState) => {
       if (!state?.tv) return;
+      if (state.employees && state.employees.get(room.sessionId) === undefined) return;
       this.receive(readTv(state.tv), !first);
       first = false;
     };
