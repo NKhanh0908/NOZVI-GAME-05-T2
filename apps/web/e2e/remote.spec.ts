@@ -16,6 +16,8 @@ type Remote = {
   heading: number;
   activity: string;
   model: 'avatar' | 'capsule';
+  /** Interpolation time (ms) the drawn pose was sampled at; null while seated. */
+  sampledAt: number | null;
 };
 type Office = { getRemotes(): Remote[]; getRemoteCount(): number };
 
@@ -103,14 +105,19 @@ test('a remote employee walks smoothly with walking animation, faces its heading
     const walker = async () => (await remotes(alice)).find((r) => r.name === 'Walker')!;
     const start = await walker();
 
-    // Sample the drawn position every animation frame while the bot walks.
+    // Sample the drawn position every animation frame while the bot walks. Each sample is
+    // stamped with the interpolation time the game drew it at, not this callback's clock:
+    // poses are interpolated on patch-receive time, and this callback may run before or
+    // after the game's frame update.
     await alice.evaluate(() => {
       const w = window as unknown as { __office: Office; __trace: number[][]; __stop?: boolean };
       w.__trace = [];
       w.__stop = false;
       const tick = () => {
         const r = w.__office.getRemotes().find((e) => e.name === 'Walker');
-        if (r) w.__trace.push([r.x, r.z, r.activity === 'walking' ? 1 : 0, performance.now()]);
+        if (r && r.sampledAt !== null) {
+          w.__trace.push([r.x, r.z, r.activity === 'walking' ? 1 : 0, r.sampledAt]);
+        }
         if (!w.__stop) requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -138,15 +145,25 @@ test('a remote employee walks smoothly with walking animation, faces its heading
       return w.__trace;
     });
 
-    const end = await walker();
     const self = bot.state.employees.get(bot.sessionId)!;
-    // The remote ends where the server put the bot, facing the same way.
+    // The remote ends where the server put the bot, facing the same way. The drawn pose lags
+    // the newest patch by the interpolation delay and moves only when a frame renders, so
+    // wait for it to settle rather than reading it once.
+    await expect
+      .poll(async () => {
+        const end = await walker();
+        return Math.hypot(end.x - self.x, end.z - self.z);
+      })
+      .toBeLessThan(0.01);
+    await expect
+      .poll(async () => angleDiff((await walker()).heading, self.heading))
+      .toBeLessThan(0.01);
+    const end = await walker();
     expect(Math.hypot(end.x - start.x, end.z - start.z)).toBeGreaterThan(0.5);
-    expect(Math.hypot(end.x - self.x, end.z - self.z)).toBeLessThan(0.01);
-    expect(angleDiff(end.heading, self.heading)).toBeLessThan(0.01);
     // Smooth: many distinct intermediate positions, and between any two drawn frames the
     // avatar never moves faster than walking speed allows (software WebGL frame times vary,
-    // so compare distance with elapsed time, not per frame). 2 m/s walk plus 50% margin.
+    // so compare distance with elapsed interpolation time, not per frame). 2 m/s walk plus
+    // 50% margin.
     const moving = trace.filter(
       (p, i) => i > 0 && (p[0] !== trace[i - 1]![0] || p[1] !== trace[i - 1]![1]),
     );
