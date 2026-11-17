@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Added
 
+- Phase 4 shared TV (FEAT-67, T-1163 to T-1145): `SharedTVState` in the room schema, `tv` command validator, `BALANCE.tv` and `PROTOCOL_VERSION` 3; server `TvSim` (ordered commands, controller leave keeps playback) with a 5-per-10-s TV command limit and `tv_rate_limited` notice; client `TvScreen` with a CSS3D layer and depth-only occluder, `TvPlayer` interface with a YouTube IFrame adapter and a fake player for e2e, curated `catalog.json` (8 Blender open movies) and pasted-URL parser, pure drift sync (ignore < 0.5 s, nudge to 2 s, hard seek above, resync on `visibilitychange`), `TvBinding` from room state to player, TV mode panel (E at the TV, Close, Esc, focus recovery, muted start) and a per-video error screen; e2e `tv.spec.ts` (three-page sync, late joiner, errors) and the manual drift soak `tvSoak.spec.ts` (skipped unless `NET_PROFILE=test`); Phase 4 verification record in `docs/plans/phase-4.md` §10.
+
 - Phase 3 verification (T-1041): headless walking bots `pnpm --filter @office/server bots` (`apps/server/scripts/bots.ts`); e2e `ten.spec.ts` (nine walking bots plus one browser fill a room, the list and board show 10, the eleventh join gets room-full headless and in the browser); dev-only network test profile on the server (`NET_PROFILE=test`, `apps/server/src/netProfile.ts`: in-order delay of 100 ms ± 20 ms with 1% 200 ms retransmit spikes, values in `BALANCE.net.testProfile`, off by default and never with `NODE_ENV=production`) and the manual 10-minute soak `netProfile.spec.ts` (skipped unless `NET_PROFILE=test`); Phase 3 acceptance record in `docs/plans/phase-3.md` §10.
 
 - Disconnect handling (T-1051): an unexpected drop keeps the employee and its seat for `BALANCE.net.reconnectSeconds` (20 s) with `connected = false` (server `onDrop` + `allowReconnection`; a consented leave or expiry removes both at once); the client runs its own retry path (`apps/web/src/net/reconnect.ts`, attempts after 1/2/4/8 s with the token in `sessionStorage`, SDK auto-reconnect off), resumes the same employee with a full resync (prediction snapped to the server, remote avatars and list rebuilt), then offers Rejoin (resume if still held, else a fresh join with the same identity); connection banner with retry countdown; "Reconnecting…" marker on remote nameplates and in the employee list; e2e `reconnect.spec.ts`, and `remote.spec.ts` / `employees.spec.ts` leave through the door (consented).
@@ -49,6 +51,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 - Phase 1.1 lighting and camera polish: ACES tone mapping, RoomEnvironment light probe fill, soft 2048 px window-sun shadows fitted to the room (tunables in `BALANCE.rendering`); camera stays below the ceiling, player fades when the camera is close; spawn moved to (-1, 0, -2.7) facing west; `e2e/visual.spec.ts` captures fixed review poses to `apps/web/visual-out/`.
 
 ### Fixed
+
+- TV late join (T-1143): the TV binding waits for the first full room state, so a late joiner no longer takes the schema defaults as a snapshot and seeks seconds behind.
 
 - Five defects in the Phase 1 plan's collision/movement code (corner test geometry, unbounded loop on huge deltas, residual furniture overlap, seam drift, non-finite input); camera no longer shows the outside of the room when the player is against a wall.
 
