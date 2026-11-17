@@ -24,7 +24,7 @@
 ## 1. Starting point
 
 - The room is a procedural shell (`room.ts`) with 17 Kenney GLB models (`furnitureManifest.ts`). The main door, utility door and air conditioner are plain palette boxes.
-- The layout already lists a computer, keyboard, mouse, desk lamp, stationery and a decorative object per desk, but only a static screen model is drawn. Task 1 confirms exactly what is drawn today.
+- The layout already lists a computer, keyboard, mouse, desk lamp, stationery and a decorative object per desk, but none of them is drawn: `DESK_SCREEN` (`computerScreen.glb`) and `COFFEE_MACHINE` are declared in the manifest and never loaded (task 1, §3.1.1).
 - Materials are roughness-1 with a baked light probe; there are no specular environment reflections (DECISIONS 2026-11-10). There is no post-processing.
 - Coffee: E at the coffee machine or water dispenser sets `drinking` for 2.5 s on the server (`BALANCE.activity.drinkSeconds`). There is no cup and no brewing step.
 - Cabinets show a "Cabinet opened" toast. The fridge, plants and shelves have no interaction.
@@ -46,6 +46,47 @@
 
 - Task 1 sets a measured budget for this phase with the owner's laptop as the reference machine: the frame rate with ten employees must not drop below the Phase 3 reading (about 55 FPS), and every later task records draw calls and triangles before and after with `__office.getDrawCalls()`.
 - Static furniture and desk props are drawn with `InstancedMesh` or merged geometry per model and material, so eight desks with six props each do not add 48 or more draw calls. Shadow casting is limited to large furniture.
+
+#### 3.1.1 Baseline (task 1, T-1146, measured 2026-11-17 on `req/feat-68` at `0a37261`)
+
+**Budget rule (owner default §6.4).** There is no fixed draw-call or triangle cap for this phase. The gate is: with ten employees the owner's laptop must not be slower than the Phase 3 reading (about 55 FPS). Every later Phase 4.1 task that changes what is drawn re-runs the baseline spec below and reports draw calls (main + shadow) and triangles before and after in its Meridian evidence; the owner's laptop FPS is checked at Milestone A and in task 16. The ARCHITECTURE target (45 calls, 120k triangles) is already exceeded and stays a reference, not the gate.
+
+**How to re-run.** `RENDER_BASELINE=1 pnpm --filter @office/web e2e renderBaseline` (`apps/web/e2e/renderBaseline.spec.ts`; skipped without the variable). It joins one browser plus idle headless bots standing at the spawn, waits for furniture, lighting and every remote avatar model, then reads `__office.getDrawCalls()` at the seven `visual.spec` views (shared in `e2e/poses.ts`). `RENDER_BASELINE_COUNTS=1,3,10` picks employee counts; the JSON lands in `visual-out/render-baseline.json`.
+
+**Render-quality switch.** `VITE_RENDER_QUALITY` (`apps/web/src/game/renderQuality.ts`): `high` by default, `e2e` in Playwright builds (`playwright.config.ts`). Nothing reads it yet; tasks 4 and 5 use it to keep reflections and post-processing off under software WebGL. The baseline below ran with `e2e`, which today renders exactly what `high` renders.
+
+**What is drawn today** (33 layout items, `furnitureManifest.ts`, `room.ts`, `loadFurniture.ts`):
+
+| Layout content                                                                                                                            | Count | Drawn as                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------- |
+| desk, chair                                                                                                                               | 8 + 8 | Kenney GLB model (`desk`, `chairDesk`)                                                   |
+| fridge, countertop, water_dispenser, storage_cabinet, lockers, shelves, plant (2), shoe_rack, sofa, coffee_table, TV, decorative_lighting | 13    | Kenney GLB model (`furnitureManifest.ts`; 29 models loaded in total)                     |
+| main_door, utility_door, air_conditioner                                                                                                  | 3     | Palette box (`room.ts`)                                                                  |
+| Shell: floor, ceiling, 6 wall boxes                                                                                                       | 8     | Procedural planes and boxes; the south window is part of the `wall_south` box            |
+| TV `tv_screen` component                                                                                                                  | 1     | Procedural bezel and depth-only occluder (`TvScreen`) under the CSS3D video              |
+| Entrance online board                                                                                                                     | 1     | Procedural plane with a canvas texture (`EntranceBoard`)                                 |
+| Avatars (local and each remote)                                                                                                           | 1–10  | Modular Suit GLB (`men_suit` / `women_suit`), capsule until loaded; nameplates are CSS2D |
+| Desk components: computer, keyboard, mouse, desk_lamp, stationery, decorative_object, desk_divider, desk_frame                            | 8 × 8 | **Not drawn** (`DESK_SCREEN` declared, unused; the desk model has its own frame)         |
+| Countertop components: cabinets (2), coffee_machine, cups                                                                                 | 4     | **Not drawn** (`COFFEE_MACHINE` declared, unused); the countertop model only             |
+| main_door components: door, door_frame, signage, intercom, breaker_box; TV speakers (2); shelves personal_decorative_items, boxes         | 9     | **Not drawn**                                                                            |
+| Shell window glass and blinds, ceiling light fixture                                                                                      | 2     | **Not drawn** (lighting only: hemisphere, sun with shadows, baked light probe)           |
+
+**Draw calls and triangles** — headless Chromium with **SwiftShader software WebGL** in the cloud container, 1280×720, render quality `e2e`. Call and triangle counts depend on the scene and view, not the GPU, so they are the comparable numbers; the FPS row is not representative of real hardware. Triangles are summed over the shadow and main passes. Bots stand idle at the spawn.
+
+| View              | 1 employee: main / shadow / total | Triangles | 3 employees: main / shadow / total | Triangles | 10 employees: main / shadow / total | Triangles |
+| ----------------- | --------------------------------- | --------- | ---------------------------------- | --------- | ----------------------------------- | --------- |
+| 01-spawn          | 70 / 104 / 174                    | 25,898    | 90 / 124 / 214                     | 52,434    | 160 / 194 / 354                     | 145,310   |
+| 02-pods           | 68 / 104 / 172                    | 27,628    | 88 / 124 / 212                     | 54,164    | 158 / 194 / 352                     | 147,040   |
+| 03-tv-wall        | 71 / 104 / 175                    | 27,018    | 91 / 124 / 215                     | 53,554    | 161 / 194 / 355                     | 146,430   |
+| 04-across-tv-wall | 49 / 104 / 153                    | 24,524    | 69 / 124 / 193                     | 51,060    | 139 / 194 / 333                     | 143,936   |
+| 05-near-wall-fade | 89 / 104 / 193                    | 29,358    | 109 / 124 / 233                    | 55,894    | 179 / 194 / 373                     | 148,770   |
+| 06-desk-side      | 79 / 104 / 183                    | 26,520    | 99 / 124 / 223                     | 53,056    | 169 / 194 / 363                     | 145,932   |
+| 07-sofa-side      | 81 / 104 / 185                    | 26,336    | 103 / 124 / 227                    | 53,180    | 169 / 194 / 363                     | 145,720   |
+| FPS at 01-spawn   | 4.8 (SwiftShader)                 |           | 3.4 (SwiftShader)                  |           | 3.1 (SwiftShader)                   |           |
+
+Repeat runs can differ by a few calls in a view (the same session's `visual.spec` run read 83 main calls and 26,644 triangles at 07-sofa-side). Readings: each extra employee adds about 10 main and 10 shadow calls and about 13,300 triangles in every view (avatars dominate the triangle count from three employees up); the shadow pass (104 calls with one employee) costs more calls than the main pass because every furniture mesh casts. Desk props and room details are the next additions, which is why task 3 (instancing) comes before tasks 6, 7 and 14.
+
+**Owner item:** FPS with ten employees on the owner's laptop for the current scene (the Phase 3 reading was about 55 FPS); not measurable in this container.
 
 ### 3.2 Visuals (CC0 only)
 

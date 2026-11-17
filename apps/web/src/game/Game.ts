@@ -7,6 +7,7 @@ import { KeyboardInput } from './input';
 import { Player } from './player';
 import { setupLighting } from './lighting';
 import { buildRoom } from './room';
+import { renderQuality, type RenderQuality } from './renderQuality';
 import { loadFurniture } from './assets/loadFurniture';
 import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
@@ -34,6 +35,8 @@ export class Game {
   /** alpha: the TV occluder clears to transparent so the CSS3D layer below shows through. */
   readonly renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   private readonly labelRenderer = new CSS2DRenderer();
+  /** T-1146: `e2e` in Playwright builds; later Phase 4.1 effects check it. */
+  readonly renderQuality: RenderQuality = renderQuality(import.meta.env);
   /** REQ-TV-001: WebGL bezel and occluder, plus the CSS3D layer holding the screen element. */
   readonly tvScreen = new TvScreen(officeLayout);
   readonly tvLayer = new TvCssLayer(this.tvScreen);
@@ -178,6 +181,7 @@ export class Game {
           if (p.pitch !== undefined) this.rig.pitch = p.pitch;
         },
         getDrawCalls: () => this.measureDrawCalls(),
+        getRenderQuality: () => this.renderQuality,
         isLightingReady: () => lightingReady,
         getFurniture: () => this.furniture,
         getActivity: () => this.player.activity,

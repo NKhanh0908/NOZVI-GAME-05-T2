@@ -1,14 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { join } from './helpers';
+import { POSES, type Pose } from './poses';
 
 // Evidence capture, not a pixel-diff test: writes fixed camera poses to visual-out/ for review
 // next to the reference photos in except/. Fails only on console errors (and, softly, on a
 // camera above the ceiling). Override the folder with VISUAL_OUT=<dir>.
 const OUT = process.env.VISUAL_OUT ?? 'visual-out';
 const CEILING = 2.7;
-const DEG = Math.PI / 180;
 
-type Pose = { x: number; z: number; heading: number; yaw?: number; pitch?: number };
 type Hook = {
   setPose(p: Pose): void;
   getCamera(): { x: number; y: number; z: number; yaw: number; pitch: number };
@@ -22,41 +21,6 @@ const getCamera = (page: Page) =>
   page.evaluate(() => (window as unknown as Win).__office.getCamera());
 const getDrawCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as Win).__office.getDrawCalls());
-
-// Poses use the layout frame: heading 0 faces +Z (south, window side), -90 deg faces west.
-const POSES: { name: string; pose?: Pose; note: string }[] = [
-  { name: '01-spawn', note: 'spawn view as the player first sees it' },
-  {
-    name: '02-pods',
-    pose: { x: -0.72, z: 2.46, heading: -90 * DEG, pitch: 22 * DEG },
-    note: 'aisle between the pods looking west, window on the left (cf. except/main.jpg)',
-  },
-  {
-    name: '03-tv-wall',
-    pose: { x: -1.2, z: -0.6, heading: -90 * DEG, pitch: 18 * DEG },
-    note: 'entertainment corner looking west toward the TV wall',
-  },
-  {
-    name: '04-across-tv-wall',
-    pose: { x: 3.6, z: 2.46, heading: 90 * DEG, pitch: 15 * DEG },
-    note: 'east wall with utility door and air conditioner (cf. except/across-wall-tv.jpg)',
-  },
-  {
-    name: '05-near-wall-fade',
-    pose: { x: -1.44, z: -4.15, heading: 0, pitch: 25 * DEG },
-    note: 'back to the north wall: camera pulled in, player mesh faded',
-  },
-  {
-    name: '06-desk-side',
-    pose: { x: -3.9, z: 2.46, heading: 180 * DEG, pitch: 35 * DEG },
-    note: 'side view of ws_1 looking north: chair must face its desk (to the right, +X)',
-  },
-  {
-    name: '07-sofa-side',
-    pose: { x: -2.52, z: 0.72, heading: 180 * DEG, pitch: 35 * DEG },
-    note: 'side view of the sofa looking north: seat must face the TV (to the left, -X)',
-  },
-];
 
 test('captures fixed visual poses', async ({ page }) => {
   test.setTimeout(120_000);

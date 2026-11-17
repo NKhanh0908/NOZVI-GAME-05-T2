@@ -27,8 +27,9 @@ export default defineConfig({
     {
       command: `pnpm dev --host 127.0.0.1 --port ${WEB_PORT} --strictPort`,
       url: `http://127.0.0.1:${WEB_PORT}`,
-      // The fake TV player keeps e2e off youtube.com (T-1140).
-      env: { VITE_SERVER_URL: SERVER_URL, VITE_TV_PLAYER: 'fake' },
+      // The fake TV player keeps e2e off youtube.com (T-1140); the e2e render quality keeps
+      // costly effects off under software WebGL (T-1146).
+      env: { VITE_SERVER_URL: SERVER_URL, VITE_TV_PLAYER: 'fake', VITE_RENDER_QUALITY: 'e2e' },
       reuseExistingServer: false,
       timeout: 60_000,
     },
