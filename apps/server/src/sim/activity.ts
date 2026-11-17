@@ -2,6 +2,8 @@ import {
   BALANCE,
   SeatRegistry,
   EMPTY_HAND,
+  canEmote,
+  emoteContinues,
   isSeated,
   nextActivity,
   nextHeld,
@@ -18,7 +20,13 @@ import {
 import { MovementSim, stepBody, type MovementBody } from './movement';
 
 /** The replicated fields the activity simulation reads and writes (`EmployeeState` fits). */
-export type ActivityBody = MovementBody & { seatId: string; item: string; sips: number };
+export type ActivityBody = MovementBody & {
+  seatId: string;
+  item: string;
+  sips: number;
+  /** REQ-AVATAR-004: running emote id, `''` when none. */
+  emote: string;
+};
 
 type Bodies = { get(id: string): ActivityBody | undefined };
 
@@ -79,6 +87,8 @@ function setHeld(body: ActivityBody, held: Held): void {
 }
 
 type Pending = { afterSeq: number; intent: IntentMessage };
+/** A running emote: when it ends and the activity it started from (its posture). */
+type RunningEmote = { endsAt: number; started: Activity };
 
 /**
  * REQ-NET-002, REQ-INT-002: authoritative activity and exclusive seating, free of sockets
@@ -102,6 +112,14 @@ type Pending = { afterSeq: number; intent: IntentMessage };
  *   employee at a time: it is busy while its brewer is `brewing`, so a cancelled brew, a
  *   leave or a dropped connection frees it.
  * - `wave`: `waving` returns to `idle` after `BALANCE.activity.waveSeconds`.
+ * - `emote { emote }` (REQ-AVATAR-004): allowed by `canEmote` (standing, or seated for all
+ *   but `dance`; never while drinking, waving or brewing; a held coffee does not matter)
+ *   and only `BALANCE.emote.minGapSeconds` or more after this employee's previous emote
+ *   started. It sets `emote` and leaves `activity`, seat and held item alone, so the
+ *   employee is in the previous activity when the emote ends. A new emote after the gap
+ *   replaces a running one. It ends after `BALANCE.emote.durationSeconds[id]`, on movement
+ *   input with a nonzero axis, or when the activity leaves the emote's posture
+ *   (`emoteContinues`: sitting, standing up, toggling work, drinking, waving, brewing).
  * - Movement input with a nonzero axis while seated stands the employee up at the seat's
  *   stand point and frees the seat, then applies the step (walking), like the client's
  *   `onMoveIntent` followed by its movement update. A zero-axis input while seated only
@@ -115,6 +133,9 @@ export class ActivitySim {
   readonly seats = new SeatRegistry();
   private readonly pending = new Map<string, Pending[]>();
   private readonly timers = new Map<string, number>();
+  private readonly emotes = new Map<string, RunningEmote>();
+  /** Start time of each employee's last accepted emote (the minimum-gap clock). */
+  private readonly lastEmoteAt = new Map<string, number>();
   private readonly seatIds: ReadonlySet<string>;
   /** The employee using the coffee machine; the machine is busy while it is `brewing`. */
   private brewer: { id: string; body: ActivityBody } | null = null;
@@ -140,8 +161,16 @@ export class ActivitySim {
   remove(id: string): void {
     this.pending.delete(id);
     this.timers.delete(id);
+    this.emotes.delete(id);
+    this.lastEmoteAt.delete(id);
     this.seats.release(id);
     if (this.brewer?.id === id) this.brewer = null;
+  }
+
+  /** Ends a running emote of `id` now (movement input); the activity is left as it is. */
+  endEmote(id: string, body: ActivityBody): void {
+    this.emotes.delete(id);
+    body.emote = '';
   }
 
   /** True while an employee is brewing at the coffee machine. */
@@ -217,9 +246,16 @@ export class ActivitySim {
         this.timers.set(id, nowMs + BALANCE.activity.waveSeconds * 1000);
         return true;
       }
-      case 'emote':
-        // REQ-AVATAR-004: refused until the server handles emotes (T-1221).
-        return false;
+      case 'emote': {
+        if (!canEmote(activity, intent.emote)) return false;
+        const last = this.lastEmoteAt.get(id);
+        if (last !== undefined && nowMs - last < BALANCE.emote.minGapSeconds * 1000) return false;
+        const seconds = BALANCE.emote.durationSeconds[intent.emote];
+        this.emotes.set(id, { endsAt: nowMs + seconds * 1000, started: activity });
+        this.lastEmoteAt.set(id, nowMs);
+        body.emote = intent.emote;
+        return true;
+      }
     }
   }
 
@@ -240,7 +276,8 @@ export class ActivitySim {
 
   /**
    * Ends drink, wave and brew timers whose time is up (a finished sip or brew updates the
-   * held item), and drops timers of cancelled ones.
+   * held item), and drops timers of cancelled ones. Ends emotes whose time is up or whose
+   * posture the activity has left.
    */
   expire(bodies: Bodies, nowMs: number): void {
     for (const [id, endsAt] of this.timers) {
@@ -258,6 +295,17 @@ export class ActivitySim {
       }
     }
     if (this.brewer && !this.machineBusy) this.brewer = null;
+    for (const [id, emote] of this.emotes) {
+      const body = bodies.get(id);
+      if (!body) {
+        this.emotes.delete(id);
+      } else if (
+        nowMs >= emote.endsAt ||
+        !emoteContinues(emote.started, body.activity as Activity)
+      ) {
+        this.endEmote(id, body);
+      }
+    }
   }
 
   private sit(id: string, body: ActivityBody, seatId: string): boolean {
@@ -286,7 +334,8 @@ export class ActivitySim {
 /**
  * The room simulation: movement and activity per 50 ms tick. Per client, in join order:
  * ready intents, then at most one input (standing a seated body up first if it moves),
- * then intents that were waiting for that input. Drink, wave and brew timers expire last.
+ * then intents that were waiting for that input. Drink, wave, brew and emote timers expire
+ * last, and an emote whose posture changed during the tick ends there.
  * Join order therefore decides contested seats within one tick: the earlier joiner wins.
  */
 export class OfficeSim {
@@ -338,6 +387,7 @@ export class OfficeSim {
       this.activity.drain(id, body, nowMs);
       if (input) {
         const moving = input.forward !== 0 || input.right !== 0;
+        if (moving) this.activity.endEmote(id, body);
         if (isSeated(body.activity as Activity)) {
           if (moving) {
             this.activity.standUp(id, body);
