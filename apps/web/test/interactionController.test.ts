@@ -101,4 +101,21 @@ describe('InteractionController', () => {
     expect(onExit).toHaveBeenCalledOnce();
     expect(sent).toEqual([]);
   });
+  it('targets the TV: shows the prompt and opens TV mode locally on E', () => {
+    const p = fakePlayer({ x: -5.0, z: -0.9, heading: Math.atan2(-0.83, -0.72) });
+    const sent: IntentMessage[] = [];
+    const onTv = vi.fn();
+    const c = new InteractionController(p, new SeatRegistry(), 'me', {
+      onExit: vi.fn(),
+      sendIntent: (i) => sent.push(i),
+      onTv,
+    });
+    expect(c.currentPrompt()).toEqual({ text: 'E — Watch TV', available: true });
+    c.press();
+    expect(onTv).toHaveBeenCalledOnce();
+    expect(sent).toEqual([]);
+    // Facing away from the TV: no prompt.
+    p.state = { x: -5.0, z: -0.9, heading: Math.PI / 2 };
+    expect(c.currentPrompt()).toBeNull();
+  });
 });

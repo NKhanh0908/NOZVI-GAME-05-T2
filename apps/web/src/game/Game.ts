@@ -17,12 +17,44 @@ import { RemoteAvatars } from './remote/RemoteAvatars';
 import { EntranceBoard } from './hud/EntranceBoard';
 import { EmployeeRoster } from '../ui/employeeRoster';
 import { bindPrediction, employeeSource, roomOccupancy, type OfficeRoomHandle } from '../net';
+import { TvScreen } from '../tv/TvScreen';
+import { TvCssLayer } from '../tv/TvCssLayer';
+import { FakeTvPlayer, type TvPlayer } from '../tv/player';
+import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
+import { FakeVideoProvider, YouTubeProvider, type VideoProvider } from '../tv/provider';
+import { TvBinding } from '../tv/TvBinding';
+import { TvMode } from '../tv/TvMode';
+import { TvErrorScreen } from '../tv/TvErrorScreen';
+
+const IDLE_INPUT = { forward: 0, right: 0, run: false } as const;
 
 export class Game {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(BALANCE.camera.fovDeg, 1, 0.05, 50);
-  readonly renderer = new THREE.WebGLRenderer({ antialias: true });
+  /** alpha: the TV occluder clears to transparent so the CSS3D layer below shows through. */
+  readonly renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   private readonly labelRenderer = new CSS2DRenderer();
+  /** REQ-TV-001: WebGL bezel and occluder, plus the CSS3D layer holding the screen element. */
+  readonly tvScreen = new TvScreen(officeLayout);
+  readonly tvLayer = new TvCssLayer(this.tvScreen);
+  /** P4.6: the video player inside the TV screen; e2e builds use the fake one. */
+  readonly tvPlayer: TvPlayer =
+    tvPlayerKind(import.meta.env) === 'fake'
+      ? new FakeTvPlayer(this.tvLayer.container)
+      : new YouTubeTvPlayer(this.tvLayer.container);
+  /** REQ-TV-003: catalog and URL parser; the fake one keeps e2e off ytimg.com thumbnails. */
+  readonly tvProvider: VideoProvider =
+    tvPlayerKind(import.meta.env) === 'fake' ? new FakeVideoProvider() : new YouTubeProvider();
+  /** REQ-TV-004: panel commands go to the room; the player follows the replicated `tv`. */
+  readonly tvControls = new TvBinding(this.tvPlayer, {
+    catalogDuration: (id) => this.tvProvider.getVideo(id)?.duration ?? null,
+    visibility: document,
+  });
+  /** REQ-TV-009: per-video error card on the screen; the binding reports changes. */
+  private readonly tvErrorScreen = new TvErrorScreen(this.tvLayer.container);
+  private readonly offTvError = this.tvControls.onErrorChange((e) => this.tvErrorScreen.show(e));
+  /** REQ-TV-002: TV mode makes the screen clickable and hands focus back on close. */
+  readonly tvMode = new TvMode((open) => this.applyTvMode(open));
   private readonly nameplate = new Nameplate();
   readonly player = new Player();
   readonly input = new KeyboardInput(window);
@@ -35,6 +67,11 @@ export class Game {
   private promptText: string | null = null;
   // WASD while seated needs no handler: movement inputs reach the server, which stands up.
   private readonly keydown = (e: KeyboardEvent): void => {
+    if (this.tvMode.isOpen) {
+      // Esc closes the panel while the app has focus; other game keys wait for Close.
+      if (e.code === 'Escape') this.tvMode.exit();
+      return;
+    }
     if (e.code === 'KeyE' && !e.repeat) this.controller.press();
     if (e.code === 'KeyG' && !e.repeat) this.controller.wave();
   };
@@ -79,14 +116,17 @@ export class Game {
           const result = handleAction(target, this.player, this.controller);
           if (result.message) this.onToast?.(result.message);
         },
+        onTv: () => this.tvMode.enter(),
       },
     );
     this.unbindPrediction = this.bindRoom(netRoom);
+    this.tvControls.attach(netRoom);
     const office = buildRoom(officeLayout);
     this.remotes = new RemoteAvatars(this.scene, employeeSource(netRoom), netRoom.sessionId);
     this.scene.add(office);
     this.roster = new EmployeeRoster(employeeSource(netRoom), netRoom.sessionId);
     this.scene.add(this.board.mesh);
+    this.scene.add(this.tvScreen.group);
     this.board.set(this.roster.count);
     this.unbindBoard = this.roster.subscribe(() => this.board.set(this.roster.count));
     const occluders: THREE.Object3D[] = [];
@@ -153,13 +193,26 @@ export class Game {
         getRemotes: () => this.remotes.list(),
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
+        getTv: () => this.tvInfo(),
+        getTvPlayer: () => this.tvPlayer,
+        isTvMode: () => this.tvMode.isOpen,
+        openTvMode: () => this.tvMode.enter(),
+        getTvView: () => this.tvControls.view(),
+        getTvSync: () => ({ ...this.tvControls.snapshot, expected: this.tvControls.expected() }),
       };
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Stacking: CSS3D TV layer (0) under the WebGL canvas (1) under the labels (2).
+    this.renderer.domElement.style.position = 'relative';
+    this.renderer.domElement.style.zIndex = '1';
+    // Focusable without a tab stop, so closing TV mode can take focus back from the iframe.
+    this.renderer.domElement.tabIndex = -1;
+    this.renderer.domElement.style.outline = 'none';
     host.appendChild(this.renderer.domElement);
+    this.tvLayer.mount(host);
     this.labelRenderer.domElement.style.cssText =
-      'position:absolute;top:0;left:0;pointer-events:none';
+      'position:absolute;top:0;left:0;pointer-events:none;z-index:2';
     host.appendChild(this.labelRenderer.domElement);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
@@ -176,6 +229,7 @@ export class Game {
   detachRoom(): void {
     this.unbindPrediction();
     this.unbindPrediction = () => undefined;
+    this.tvControls.detach();
   }
 
   /**
@@ -190,6 +244,7 @@ export class Game {
     this.unbindPrediction = this.bindRoom(netRoom);
     this.remotes.rebind(employeeSource(netRoom));
     this.roster.rebind(employeeSource(netRoom));
+    this.tvControls.attach(netRoom);
   }
 
   private bindRoom(netRoom: OfficeRoomHandle): () => void {
@@ -210,8 +265,23 @@ export class Game {
     if (w === 0 || h === 0) return;
     this.renderer.setSize(w, h);
     this.labelRenderer.setSize(w, h);
+    this.tvLayer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * REQ-TV-002: in TV mode the screen element takes clicks, and the WebGL canvas above it
+   * lets pointer events through (so no camera orbit until Close). Leaving TV mode puts
+   * both back and returns keyboard focus from a clicked iframe to the game canvas.
+   */
+  private applyTvMode(open: boolean): void {
+    this.tvLayer.container.style.pointerEvents = open ? 'auto' : 'none';
+    this.renderer.domElement.style.pointerEvents = open ? 'none' : '';
+    if (open) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) active.blur();
+    this.renderer.domElement.focus({ preventScroll: true });
   }
 
   /** Renders two frames: one with the shadow pass, one reusing the shadow map (main pass only). */
@@ -232,9 +302,10 @@ export class Game {
     this.renderer.setAnimationLoop(() => {
       this.timer.update();
       const dt = Math.min(this.timer.getDelta(), 0.1);
-      const input = this.input.read();
+      // TV mode: the panel has the keyboard (URL field); the player stands still until Close.
+      const input = this.tvMode.isOpen ? IDLE_INPUT : this.input.read();
       this.player.update(input, this.rig.yaw, dt);
-      const prompt = this.controller.currentPrompt();
+      const prompt = this.tvMode.isOpen ? null : this.controller.currentPrompt();
       const text = prompt?.text ?? null;
       if (text !== this.promptText) {
         this.promptText = text;
@@ -247,11 +318,13 @@ export class Game {
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
       this.renderer.render(this.scene, this.camera);
       this.labelRenderer.render(this.scene, this.camera);
+      this.tvLayer.render(this.camera);
     });
   }
 
   dispose(): void {
     this.disposed = true;
+    this.tvMode.exit();
     this.renderer.setAnimationLoop(null);
     this.unbindPrediction();
     this.input.dispose();
@@ -268,5 +341,38 @@ export class Game {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
+    this.offTvError();
+    this.tvControls.dispose();
+    this.tvErrorScreen.dispose();
+    this.tvPlayer.dispose();
+    this.tvLayer.dispose();
+    this.tvScreen.dispose();
+  }
+
+  /** Dev hook: TV screen pose, CSS layer size and whether the screen centre is in view. */
+  private tvInfo() {
+    const { position, width, height, rotY } = this.tvScreen.pose;
+    this.camera.updateMatrixWorld();
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(
+        this.camera.projectionMatrix,
+        this.camera.matrixWorldInverse,
+      ),
+    );
+    const [centre] = this.tvScreen.worldPoints();
+    const layer = this.tvLayer.renderer.domElement;
+    const box = this.tvLayer.container.getBoundingClientRect();
+    return {
+      position,
+      width,
+      height,
+      rotY,
+      inView: frustum.containsPoint(centre!),
+      layerSize: { width: layer.clientWidth, height: layer.clientHeight },
+      screenRect: { x: box.x, y: box.y, width: box.width, height: box.height },
+      pointerEvents: getComputedStyle(this.tvLayer.container).pointerEvents,
+      canvasPointerEvents: getComputedStyle(this.renderer.domElement).pointerEvents,
+      mounted: layer.isConnected && this.tvLayer.container.isConnected,
+    };
   }
 }

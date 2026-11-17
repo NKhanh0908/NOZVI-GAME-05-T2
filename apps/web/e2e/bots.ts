@@ -8,9 +8,11 @@ import { SERVER_URL } from './ports';
  */
 export const E2E_WIRE = {
   room: 'office',
-  protocolVersion: 2,
+  protocolVersion: 3,
   maxClients: 10,
   netProfileMinutes: 10,
+  tvConvergenceSeconds: 5,
+  tvDriftTargetSeconds: 1.0,
 } as const;
 
 type Employee = { name: string };
