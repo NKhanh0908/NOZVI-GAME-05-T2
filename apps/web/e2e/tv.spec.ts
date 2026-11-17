@@ -483,3 +483,69 @@ test('a page that joins mid-video seeks to the server position within 1 s', asyn
     await Promise.all([a, late].map((p) => p.context().close()));
   }
 });
+
+// T-1144 (REQ-TV-009): per-video error UI for the IFrame error codes, with the fake player.
+type ErrorHook = { getTvPlayer(): { emitError(code: number): void } };
+const emitError = (page: Page, code: number) =>
+  page.evaluate(
+    (c) => (window as unknown as { __office: ErrorHook }).__office.getTvPlayer().emitError(c),
+    code,
+  );
+
+test('a player error shows a per-video message on every page and another video can be chosen', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const code = 'TV-E2E-08';
+  const a = await joinPage(browser, 'ErrA', code);
+  const b = await joinPage(browser, 'ErrB', code);
+  const c = await joinPage(browser, 'ErrC', code);
+  const all = [a, b, c];
+  try {
+    // B stands at the TV so its screen is in view (evidence screenshot).
+    await walkToTv(b);
+    await openTv(b);
+    const panels = [await openPanel(a), b.getByTestId('tv-panel'), await openPanel(c)];
+    await panels[0]!
+      .getByRole('list', { name: 'Catalog' })
+      .getByRole('button', { name: 'Alpha clip' })
+      .click();
+    await expectAll(all, 'AAAAAAAAAAA', 'playing');
+    for (const page of all) await expect(page.getByTestId('tv-screen-error')).toBeHidden();
+
+    // Embedding blocked (150) on every client, as a blocked video fails for everyone.
+    for (const page of all) await emitError(page, 150);
+    for (const [i, page] of all.entries()) {
+      const screen = page.getByTestId('tv-screen-error');
+      await expect(screen).toBeVisible();
+      await expect(screen).toContainText("This video can't be played here");
+      const alert = panels[i]!.getByTestId('tv-error');
+      await expect(alert).toContainText("This video can't be played here");
+      await expect(alert).toContainText('does not allow playing it outside YouTube');
+      await expect(alert).toHaveAttribute('data-code', '150');
+      await expect(panels[i]!.getByTestId('tv-now')).toHaveText("Can't play: Alpha clip");
+      // The failed item is not offered again; the others still are.
+      const catalog = panels[i]!.getByRole('list', { name: 'Catalog' });
+      await expect(catalog.getByRole('button', { name: /Alpha clip/ })).toBeDisabled();
+      await expect(catalog.getByRole('button', { name: 'Bravo clip' })).toBeEnabled();
+      // The player stopped locally; the shared state still names the video.
+      expect((await pageTv(page)).player.videoId).toBeNull();
+      expect((await pageTv(page)).videoId).toBe('AAAAAAAAAAA');
+    }
+    if (process.env.TV_ERROR_SHOT) await b.screenshot({ path: process.env.TV_ERROR_SHOT });
+
+    // C chooses another video: the error clears everywhere and all three play it.
+    await panels[2]!
+      .getByRole('list', { name: 'Catalog' })
+      .getByRole('button', { name: 'Bravo clip' })
+      .click();
+    await expectAll(all, 'BBBBBBBBBBB', 'playing');
+    for (const [i, page] of all.entries()) {
+      await expect(page.getByTestId('tv-screen-error')).toBeHidden();
+      await expect(panels[i]!.getByTestId('tv-error')).toHaveCount(0);
+      await expect(panels[i]!.getByTestId('tv-now')).toHaveText('Playing: Bravo clip');
+    }
+  } finally {
+    await Promise.all(all.map((p) => p.context().close()));
+  }
+});

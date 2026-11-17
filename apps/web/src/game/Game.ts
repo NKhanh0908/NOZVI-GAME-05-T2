@@ -24,6 +24,7 @@ import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
 import { FakeVideoProvider, YouTubeProvider, type VideoProvider } from '../tv/provider';
 import { TvBinding } from '../tv/TvBinding';
 import { TvMode } from '../tv/TvMode';
+import { TvErrorScreen } from '../tv/TvErrorScreen';
 
 const IDLE_INPUT = { forward: 0, right: 0, run: false } as const;
 
@@ -49,6 +50,9 @@ export class Game {
     catalogDuration: (id) => this.tvProvider.getVideo(id)?.duration ?? null,
     visibility: document,
   });
+  /** REQ-TV-009: per-video error card on the screen; the binding reports changes. */
+  private readonly tvErrorScreen = new TvErrorScreen(this.tvLayer.container);
+  private readonly offTvError = this.tvControls.onErrorChange((e) => this.tvErrorScreen.show(e));
   /** REQ-TV-002: TV mode makes the screen clickable and hands focus back on close. */
   readonly tvMode = new TvMode((open) => this.applyTvMode(open));
   private readonly nameplate = new Nameplate();
@@ -337,7 +341,9 @@ export class Game {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
+    this.offTvError();
     this.tvControls.dispose();
+    this.tvErrorScreen.dispose();
     this.tvPlayer.dispose();
     this.tvLayer.dispose();
     this.tvScreen.dispose();

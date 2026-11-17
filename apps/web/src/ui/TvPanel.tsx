@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import type { TvControls, TvView, TvViewSource } from '../tv/controls';
 import type { VideoProvider } from '../tv/provider';
 import { formatTime, readUrlField, seekMax } from '../tv/panelModel';
+import { VIDEO_ERROR_TITLE } from '../tv/videoError';
 
 /** How often the panel refreshes the position and seek bar (ms). */
 const VIEW_POLL_MS = 250;
@@ -66,6 +67,10 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
       setUrlError(result.error);
       return;
     }
+    if (source.errorFor(result.videoId)) {
+      setUrlError(`${VIDEO_ERROR_TITLE}. Choose another video.`);
+      return;
+    }
     setUrlError(null);
     setUrl('');
     act(() => controls.load(result.videoId))();
@@ -109,8 +114,31 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
       <div data-testid="tv-now" style={{ opacity: 0.85 }}>
         {idle
           ? 'Nothing playing'
-          : `${view.status === 'playing' ? 'Playing' : 'Paused'}: ${current?.title ?? view.videoId}`}
+          : `${view.error ? "Can't play" : view.status === 'playing' ? 'Playing' : 'Paused'}: ${current?.title ?? view.videoId}`}
       </div>
+
+      {view.error && (
+        <div
+          role="alert"
+          data-testid="tv-error"
+          data-code={view.error.code}
+          style={{
+            background: 'rgba(214,69,69,0.25)',
+            border: '1px solid rgba(245,163,163,0.6)',
+            borderRadius: 6,
+            padding: 8,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          <strong>{VIDEO_ERROR_TITLE}</strong>
+          <span>{view.error.detail}</span>
+          <span style={{ opacity: 0.8 }}>
+            Choose another video from the catalog or paste a link.
+          </span>
+        </div>
+      )}
 
       {view.muted && (
         <button
@@ -189,38 +217,47 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
           </div>
         ) : (
           <ul aria-label="Catalog" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {catalog.map((v) => (
-              <li key={v.id}>
-                <button
-                  type="button"
-                  aria-pressed={v.id === view.videoId}
-                  onClick={act(() => controls.load(v.id))}
-                  style={{
-                    ...button,
-                    width: '100%',
-                    margin: '2px 0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    textAlign: 'left',
-                    fontWeight: 500,
-                    background: v.id === view.videoId ? 'rgba(47,111,219,0.6)' : button.background,
-                  }}
-                >
-                  {v.thumbnail && (
-                    <img
-                      src={v.thumbnail}
-                      alt=""
-                      width={48}
-                      height={27}
-                      loading="lazy"
-                      style={{ objectFit: 'cover', borderRadius: 3 }}
-                    />
-                  )}
-                  <span>{v.title}</span>
-                </button>
-              </li>
-            ))}
+            {catalog.map((v) => {
+              const failed = source.errorFor(v.id) !== null;
+              return (
+                <li key={v.id}>
+                  <button
+                    type="button"
+                    aria-pressed={v.id === view.videoId}
+                    disabled={failed}
+                    title={failed ? VIDEO_ERROR_TITLE : undefined}
+                    onClick={act(() => controls.load(v.id))}
+                    style={{
+                      ...button,
+                      width: '100%',
+                      margin: '2px 0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      textAlign: 'left',
+                      fontWeight: 500,
+                      opacity: failed ? 0.5 : 1,
+                      cursor: failed ? 'not-allowed' : 'pointer',
+                      background:
+                        v.id === view.videoId ? 'rgba(47,111,219,0.6)' : button.background,
+                    }}
+                  >
+                    {v.thumbnail && (
+                      <img
+                        src={v.thumbnail}
+                        alt=""
+                        width={48}
+                        height={27}
+                        loading="lazy"
+                        style={{ objectFit: 'cover', borderRadius: 3 }}
+                      />
+                    )}
+                    <span>{v.title}</span>
+                    {failed && <span style={{ marginLeft: 'auto', fontSize: 11 }}>Can't play</span>}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

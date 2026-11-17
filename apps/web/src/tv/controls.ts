@@ -1,4 +1,5 @@
 import type { TvStatus } from '@office/protocol';
+import type { TvVideoError } from './videoError';
 
 /**
  * REQ-TV-002: what the TV panel asks for. The panel only talks to this seam; `TvBinding`
@@ -25,9 +26,13 @@ export type TvView = {
   /** Seconds, or null while unknown. */
   duration: number | null;
   muted: boolean;
+  /** REQ-TV-009: the current video failed on this client (null while it plays fine). */
+  error: TvVideoError | null;
 };
 
 /** Read side of the seam, derived from the room `tv` state plus the player. */
 export interface TvViewSource {
   view(): TvView;
+  /** REQ-TV-009: the session's error for `videoId`, or null (failed items are not offered). */
+  errorFor(videoId: string): TvVideoError | null;
 }

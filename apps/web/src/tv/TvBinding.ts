@@ -9,6 +9,7 @@ import {
 } from '@office/protocol';
 import type { TvControls, TvView, TvViewSource } from './controls';
 import type { TvPlayer } from './player';
+import { VideoErrorLog, type TvVideoError } from './videoError';
 import {
   ClockOffsetEstimator,
   DriftController,
@@ -77,6 +78,11 @@ const commandKey = (tv: TvSnapshot) => `${tv.updatedAt}|${tv.status}|${tv.videoI
  *
  * Video end (OQ-022): only the controller's client reports it, as a `pause` (the server
  * stamps the end position); other clients hold the last frame until that arrives.
+ *
+ * Video errors (REQ-TV-009): an `onError` from the local player marks the loaded video as
+ * failed for this session. The player stops, the view carries the error while the shared
+ * state still names that video, and the binding never loads it again; the shared state is
+ * left alone, so other clients keep playing if their player can. Another video clears it.
  */
 export class TvBinding implements TvControls, TvViewSource {
   private room: TvRoom | null = null;
@@ -95,6 +101,10 @@ export class TvBinding implements TvControls, TvViewSource {
   private readonly catalogDuration: (videoId: string) => number | null;
   private readonly onRateLimited: (notice: TvRateLimitedNotice) => void;
   private readonly cleanup: (() => void)[] = [];
+  private readonly errors = new VideoErrorLog();
+  private readonly errorListeners = new Set<(error: TvVideoError | null) => void>();
+  /** Last error passed to the listeners (identity check avoids repeat calls). */
+  private shownError: TvVideoError | null = null;
 
   constructor(
     private readonly player: TvPlayer,
@@ -117,6 +127,7 @@ export class TvBinding implements TvControls, TvViewSource {
       this.cleanup.push(onBecameVisible(options.visibility, () => this.resync()));
     }
     this.cleanup.push(player.onEnded(() => this.ended()));
+    this.cleanup.push(player.onError((code) => this.failed(code)));
   }
 
   /** Binds to a joined or resumed room; the first snapshot is applied at once. */
@@ -151,6 +162,23 @@ export class TvBinding implements TvControls, TvViewSource {
   dispose(): void {
     this.detach();
     for (const off of this.cleanup.splice(0)) off();
+    this.errorListeners.clear();
+  }
+
+  /** Error of the video the shared state names now, or null. */
+  get error(): TvVideoError | null {
+    return this.tv.status === 'idle' ? null : this.errors.get(this.tv.videoId);
+  }
+
+  /** Error recorded for `videoId` in this session, or null (the panel marks failed items). */
+  errorFor(videoId: string): TvVideoError | null {
+    return this.errors.get(videoId);
+  }
+
+  /** Called with the current video's error whenever it changes (null clears it). */
+  onErrorChange(listener: (error: TvVideoError | null) => void): () => void {
+    this.errorListeners.add(listener);
+    return () => this.errorListeners.delete(listener);
   }
 
   /** The last replicated state. */
@@ -194,6 +222,7 @@ export class TvBinding implements TvControls, TvViewSource {
         time: 0,
         duration: null,
         muted: this.player.isMuted(),
+        error: null,
       };
     }
     return {
@@ -202,6 +231,7 @@ export class TvBinding implements TvControls, TvViewSource {
       time: this.loaded === videoId ? this.player.getTime() : (this.expected() ?? 0),
       duration: this.player.getDuration() ?? this.catalogDuration(videoId),
       muted: this.player.isMuted(),
+      error: this.error,
     };
   }
 
@@ -217,6 +247,7 @@ export class TvBinding implements TvControls, TvViewSource {
     this.key = key;
     this.tv = tv;
     this.apply();
+    this.publishError();
   }
 
   private apply(): void {
@@ -229,6 +260,11 @@ export class TvBinding implements TvControls, TvViewSource {
         this.loaded = null;
       }
       this.drift.resync(tv, { time: 0 }, this.now());
+      return;
+    }
+    if (this.errors.has(tv.videoId)) {
+      // A failed video is not loaded again in this session; the screen shows the error.
+      this.unload();
       return;
     }
     const expected = this.expected() ?? 0;
@@ -272,6 +308,29 @@ export class TvBinding implements TvControls, TvViewSource {
   private run(cmd: PlayerCommand): void {
     if (cmd.kind === 'seek') this.player.seek(cmd.time);
     else if (cmd.kind === 'rate') this.player.setRate(cmd.rate);
+  }
+
+  /** The local player reported an error for the loaded video. */
+  private failed(code: number): void {
+    const videoId = this.loaded;
+    if (videoId === null) return;
+    this.errors.report(videoId, code);
+    this.unload();
+    this.publishError();
+  }
+
+  private unload(): void {
+    if (this.loaded === null) return;
+    this.player.stop();
+    this.player.setRate(1);
+    this.loaded = null;
+  }
+
+  private publishError(): void {
+    const error = this.error;
+    if (error === this.shownError) return;
+    this.shownError = error;
+    for (const l of [...this.errorListeners]) l(error);
   }
 
   /** The local player reached the end: hold the frame; the controller reports it. */
