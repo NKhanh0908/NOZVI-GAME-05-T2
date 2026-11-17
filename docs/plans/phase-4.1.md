@@ -118,6 +118,19 @@ Repeat runs can differ by a few calls in a view (the same session's `visual.spec
 
 - One set of design tokens (colours from the SPEC palette, spacing, radius, type scale) applied to the join screen, employee list, prompt, toast, connection banner and the Phase 4 TV panel. Keyboard focus states and readable contrast are part of the restyle.
 
+**Task 15 result (T-1159, 2026-11-17).** Tokens: `apps/web/src/ui/tokens.css` (CSS custom properties `--ov-*`: palette colours from the layout `palette` — walls `#F5F6F8`, chair seat ink `#222426`, lime `#6CB33F` / `#48A832`, walnut — plus light-surface, dark-HUD, accent, focus, spacing on a 4 px grid, radius, type scale and two shadows). `ui/tokens.ts` holds typed `var(--ov-…)` references for inline styles; `ui/ui.css` holds the states inline styles cannot express (buttons, inputs, hover, disabled, `:focus-visible` ring: 3 px deep lime on light surfaces, lime on the dark HUD, white on the red alert banner; the game canvas keeps no ring). Join screen, employee list, prompt, toast, connection banner, TV panel and the key hint read only tokens; `apps/web/test/uiTokens.test.ts` fails on any hex, `rgb()` / `hsl()` or `system-ui` literal in those files and on an unresolved token. Disconnected rows in the list are muted and italic instead of 50 % opacity (opacity broke contrast). Contrast (WCAG 2.x, translucent HUD composited over white, the worst case), checked by the same test:
+
+| Pair                                              | Ratio               |
+| ------------------------------------------------- | ------------------- |
+| Join card text / muted text / error               | 15.57 / 8.27 / 6.57 |
+| Join Office button (ink on lime, normal / hover)  | 5.13 / 6.05         |
+| HUD text / muted text / unavailable prompt        | 12.22 / 7.65 / 6.20 |
+| HUD button text (normal / hover)                  | 8.39 / 6.52         |
+| TV selected catalog entry; error box text / muted | 6.87; 9.94 / 6.22   |
+| Connection lost banner                            | 5.99                |
+
+Focus rings and input borders reach at least 3:1 against their surface (WCAG 1.4.11). Disabled buttons (50 % opacity) are exempt.
+
 ### 3.7 Avatars
 
 - Starting point: two presets (`men_suit.glb`, `women_suit.glb`, Quaternius Modular Suit) animated with clips retargeted from the Quaternius Universal Animation Library (`anim/ual.glb`, 46 clips). `working` plays `Sitting_Idle_Loop`, so a working employee looks the same as a seated idle one; the wave is a procedural arm override. The library has no typing, laughing or waving clip. Office-usable unused clips: `Idle_Talking_Loop`, `Sitting_Talking_Loop`, `Sitting_Enter`, `Sitting_Exit`, `PickUp_Table`, `Dance_Loop`, `Walk_Formal_Loop`.

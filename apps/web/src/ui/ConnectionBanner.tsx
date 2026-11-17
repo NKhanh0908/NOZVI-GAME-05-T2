@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ConnectionError, ConnectionStatus, ReconnectState } from '../net';
 import { JOIN_ERROR_TEXT } from './JoinScreen';
+import { color, font, hudPanel, space } from './tokens';
 
 /** Banner text for a state; null hides the banner. Pure, so tests need no DOM. */
 export function bannerText(
@@ -65,26 +66,28 @@ export function ConnectionBanner({
     <div
       data-testid="connection-banner"
       role={canRejoin ? 'alert' : 'status'}
+      className={canRejoin ? 'ov-hud ov-alert' : 'ov-hud'}
       style={{
+        ...hudPanel,
         position: 'absolute',
-        top: 16,
+        top: space[4],
         left: '50%',
         transform: 'translateX(-50%)',
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        maxWidth: 'calc(100% - 32px)',
-        color: '#fff',
-        background: canRejoin ? 'rgba(180,35,24,0.92)' : 'rgba(34,36,38,0.88)',
-        borderRadius: 8,
-        padding: '8px 14px',
-        font: '600 14px system-ui',
+        gap: space[3],
+        maxWidth: `calc(100% - ${space[6]})`,
+        color: canRejoin ? color.alertText : color.hudText,
+        background: canRejoin ? color.alert : color.hud,
+        padding: `${space[2]} ${space[4]}`,
+        fontSize: font.sm,
+        fontWeight: font.bold,
       }}
     >
       <span data-testid="connection-banner-text">{text}</span>
-      {detail && <span style={{ fontWeight: 400, fontSize: 12 }}>{detail}</span>}
+      {detail && <span style={{ fontWeight: font.regular, fontSize: font.xs }}>{detail}</span>}
       {canRejoin && (
-        <button type="button" onClick={onRejoin}>
+        <button type="button" className="ov-button" onClick={onRejoin}>
           Rejoin
         </button>
       )}

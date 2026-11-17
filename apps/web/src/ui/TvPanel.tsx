@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { TvControls, TvView, TvViewSource } from '../tv/controls';
 import type { VideoProvider } from '../tv/provider';
 import { formatTime, readUrlField, seekMax } from '../tv/panelModel';
 import { VIDEO_ERROR_TITLE } from '../tv/videoError';
+import { color, font, hudPanel, radius, space } from './tokens';
 
 /** How often the panel refreshes the position and seek bar (ms). */
 const VIEW_POLL_MS = 250;
@@ -12,16 +13,6 @@ type Props = {
   controls: TvControls;
   source: TvViewSource;
   onClose(): void;
-};
-
-const button: CSSProperties = {
-  font: '600 13px system-ui',
-  color: '#fff',
-  background: 'rgba(255,255,255,0.12)',
-  border: '1px solid rgba(255,255,255,0.25)',
-  borderRadius: 6,
-  padding: '6px 10px',
-  cursor: 'pointer',
 };
 
 /**
@@ -83,35 +74,34 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
     <section
       aria-label="TV"
       data-testid="tv-panel"
+      className="ov-hud"
       style={{
+        ...hudPanel,
         position: 'absolute',
-        top: 16,
-        left: 16,
+        top: space[4],
+        left: space[4],
         width: 300,
-        maxHeight: 'calc(100% - 32px)',
+        maxHeight: `calc(100% - ${space[6]})`,
         overflowY: 'auto',
         boxSizing: 'border-box',
-        color: '#fff',
-        background: 'rgba(34,36,38,0.9)',
-        borderRadius: 8,
-        padding: 12,
-        font: '13px system-ui',
+        padding: space[3],
+        fontSize: font.sm,
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: space[3],
       }}
     >
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <strong style={{ fontSize: 15 }}>TV</strong>
-        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ opacity: 0.6, fontSize: 12 }}>Esc</span>
-          <button type="button" style={button} onClick={onClose}>
+        <strong style={{ fontSize: font.md }}>TV</strong>
+        <span style={{ display: 'flex', gap: space[2], alignItems: 'center' }}>
+          <span style={{ color: color.hudTextMuted, fontSize: font.xs }}>Esc</span>
+          <button type="button" className="ov-button" onClick={onClose}>
             Close
           </button>
         </span>
       </header>
 
-      <div data-testid="tv-now" style={{ opacity: 0.85 }}>
+      <div data-testid="tv-now" style={{ color: color.hudTextMuted }}>
         {idle
           ? 'Nothing playing'
           : `${view.error ? "Can't play" : view.status === 'playing' ? 'Playing' : 'Paused'}: ${current?.title ?? view.videoId}`}
@@ -123,46 +113,57 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
           data-testid="tv-error"
           data-code={view.error.code}
           style={{
-            background: 'rgba(214,69,69,0.25)',
-            border: '1px solid rgba(245,163,163,0.6)',
-            borderRadius: 6,
-            padding: 8,
+            background: color.hudDangerBg,
+            border: `1px solid ${color.hudDangerBorder}`,
+            borderRadius: radius.sm,
+            padding: space[2],
             display: 'flex',
             flexDirection: 'column',
-            gap: 4,
+            gap: space[1],
           }}
         >
           <strong>{VIDEO_ERROR_TITLE}</strong>
           <span>{view.error.detail}</span>
-          <span style={{ opacity: 0.8 }}>
+          <span style={{ color: color.hudTextMuted }}>
             Choose another video from the catalog or paste a link.
           </span>
         </div>
       )}
 
       {view.muted && (
-        <button
-          type="button"
-          style={{ ...button, background: '#2f6fdb' }}
-          onClick={act(() => controls.unmute())}
-        >
+        <button type="button" className="ov-button-primary" onClick={act(() => controls.unmute())}>
           Click to unmute
         </button>
       )}
 
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button type="button" style={button} disabled={idle} onClick={act(() => controls.play())}>
+      <div style={{ display: 'flex', gap: space[2] }}>
+        <button
+          type="button"
+          className="ov-button"
+          disabled={idle}
+          onClick={act(() => controls.play())}
+        >
           Play
         </button>
-        <button type="button" style={button} disabled={idle} onClick={act(() => controls.pause())}>
+        <button
+          type="button"
+          className="ov-button"
+          disabled={idle}
+          onClick={act(() => controls.pause())}
+        >
           Pause
         </button>
-        <button type="button" style={button} disabled={idle} onClick={act(() => controls.stop())}>
+        <button
+          type="button"
+          className="ov-button"
+          disabled={idle}
+          onClick={act(() => controls.stop())}
+        >
           Stop
         </button>
       </div>
 
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: space[1] }}>
         <span style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>Seek</span>
           <span data-testid="tv-time">
@@ -173,6 +174,7 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
         <input
           ref={seekRef}
           type="range"
+          className="ov-range"
           aria-label="Seek"
           min={0}
           max={max}
@@ -183,11 +185,15 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
         />
       </label>
 
-      <form onSubmit={submitUrl} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <form
+        onSubmit={submitUrl}
+        style={{ display: 'flex', flexDirection: 'column', gap: space[1] }}
+      >
         <label htmlFor="tv-url">YouTube link</label>
-        <span style={{ display: 'flex', gap: 6 }}>
+        <span style={{ display: 'flex', gap: space[2] }}>
           <input
             id="tv-url"
+            className="ov-input"
             type="text"
             value={url}
             placeholder="https://youtu.be/…"
@@ -196,23 +202,23 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
               setUrl(e.target.value);
               setUrlError(null);
             }}
-            style={{ flex: 1, minWidth: 0, font: '13px system-ui', padding: '5px 6px' }}
+            style={{ flex: 1, minWidth: 0 }}
           />
-          <button type="submit" style={button}>
+          <button type="submit" className="ov-button">
             Play link
           </button>
         </span>
         {urlError && (
-          <span role="alert" style={{ color: '#f5a3a3' }}>
+          <span role="alert" style={{ color: color.hudDangerText }}>
             {urlError}
           </span>
         )}
       </form>
 
       <div>
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>Catalog</div>
+        <div style={{ fontWeight: font.bold, marginBottom: space[1] }}>Catalog</div>
         {catalog.length === 0 ? (
-          <div data-testid="tv-catalog-empty" style={{ opacity: 0.7 }}>
+          <div data-testid="tv-catalog-empty" style={{ color: color.hudTextMuted }}>
             No videos in the catalog. Paste a YouTube link above.
           </div>
         ) : (
@@ -227,19 +233,19 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
                     disabled={failed}
                     title={failed ? VIDEO_ERROR_TITLE : undefined}
                     onClick={act(() => controls.load(v.id))}
+                    className="ov-button"
                     style={{
-                      ...button,
                       width: '100%',
                       margin: '2px 0',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
+                      gap: space[2],
                       textAlign: 'left',
-                      fontWeight: 500,
-                      opacity: failed ? 0.5 : 1,
-                      cursor: failed ? 'not-allowed' : 'pointer',
-                      background:
-                        v.id === view.videoId ? 'rgba(47,111,219,0.6)' : button.background,
+                      fontWeight: font.medium,
+                      ...(v.id === view.videoId && {
+                        background: color.selected,
+                        borderColor: color.accent,
+                      }),
                     }}
                   >
                     {v.thumbnail && (
@@ -249,11 +255,13 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
                         width={48}
                         height={27}
                         loading="lazy"
-                        style={{ objectFit: 'cover', borderRadius: 3 }}
+                        style={{ objectFit: 'cover', borderRadius: radius.sm }}
                       />
                     )}
                     <span>{v.title}</span>
-                    {failed && <span style={{ marginLeft: 'auto', fontSize: 11 }}>Can't play</span>}
+                    {failed && (
+                      <span style={{ marginLeft: 'auto', fontSize: font.xs }}>Can't play</span>
+                    )}
                   </button>
                 </li>
               );

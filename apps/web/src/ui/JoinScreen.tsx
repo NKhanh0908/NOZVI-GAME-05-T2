@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { AVATAR_IDS, normalizeOfficeCode, validateName, type AvatarId } from '@office/protocol';
 import { toConnectionError, type ConnectionErrorCode } from '../net';
 import { loadDraft, safeLocalStorage, saveDraft } from './identityStorage';
+import { color, font, radius, shadow, space } from './tokens';
 
 export type JoinResult = { name: string; officeCode: string; avatarId: AvatarId };
 const LABEL: Record<AvatarId, string> = { men_suit: 'Suit (men)', women_suit: 'Suit (women)' };
@@ -47,68 +48,108 @@ export function JoinScreen({ onJoin }: { onJoin(r: JoinResult): Promise<void> })
     attempt(result);
   };
   return (
-    <form
-      onSubmit={submit}
-      data-testid="join"
-      aria-busy={connecting}
-      style={{
-        maxWidth: 360,
-        margin: '12vh auto',
-        display: 'grid',
-        gap: 12,
-        font: '15px system-ui',
-      }}
-    >
-      <h1 style={{ margin: 0 }}>Virtual Office</h1>
-      <label>
-        Your name
-        <input
-          name="name"
-          value={draft.name}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-        />
-      </label>
-      <label>
-        Office code
-        <input
-          name="officeCode"
-          value={draft.officeCode}
-          onChange={(e) => setDraft({ ...draft, officeCode: e.target.value })}
-        />
-      </label>
-      <fieldset>
-        <legend>Avatar</legend>
-        {AVATAR_IDS.map((id) => (
-          <label key={id} style={{ marginRight: 12 }}>
-            <input
-              type="radio"
-              name="avatar"
-              value={id}
-              checked={draft.avatarId === id}
-              onChange={() => setDraft({ ...draft, avatarId: id })}
-            />{' '}
-            {LABEL[id]}
-          </label>
-        ))}
-      </fieldset>
-      {error && (
-        <p role="alert" style={{ color: '#b42318', margin: 0 }}>
-          {error}
-        </p>
-      )}
-      {failed && !connecting && (
-        <button type="button" onClick={() => attempt(failed)}>
-          Retry
+    <main style={page}>
+      <form onSubmit={submit} data-testid="join" aria-busy={connecting} style={card}>
+        <header style={{ display: 'grid', gap: space[1] }}>
+          <h1 style={{ margin: 0, fontSize: font.xl, fontWeight: font.bold }}>Virtual Office</h1>
+          <p style={{ margin: 0, color: color.textMuted, fontSize: font.sm }}>
+            Enter your name and the office code your team shares.
+          </p>
+        </header>
+        <label style={field}>
+          Your name
+          <input
+            name="name"
+            className="ov-input"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+        </label>
+        <label style={field}>
+          Office code
+          <input
+            name="officeCode"
+            className="ov-input"
+            value={draft.officeCode}
+            onChange={(e) => setDraft({ ...draft, officeCode: e.target.value })}
+          />
+        </label>
+        <fieldset
+          style={{
+            margin: 0,
+            padding: `${space[2]} ${space[3]} ${space[3]}`,
+            border: `1px solid ${color.border}`,
+            borderRadius: radius.md,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: space[4],
+          }}
+        >
+          <legend style={{ fontWeight: font.bold, fontSize: font.sm, padding: `0 ${space[1]}` }}>
+            Avatar
+          </legend>
+          {AVATAR_IDS.map((id) => (
+            <label key={id} style={{ display: 'flex', alignItems: 'center', gap: space[2] }}>
+              <input
+                type="radio"
+                name="avatar"
+                className="ov-radio"
+                value={id}
+                checked={draft.avatarId === id}
+                onChange={() => setDraft({ ...draft, avatarId: id })}
+              />
+              {LABEL[id]}
+            </label>
+          ))}
+        </fieldset>
+        {error && (
+          <p role="alert" style={{ color: color.danger, margin: 0, fontWeight: font.medium }}>
+            {error}
+          </p>
+        )}
+        {failed && !connecting && (
+          <button type="button" className="ov-button-quiet" onClick={() => attempt(failed)}>
+            Retry
+          </button>
+        )}
+        {connecting && (
+          <p role="status" style={{ margin: 0, color: color.textMuted }}>
+            Connecting to the office…
+          </p>
+        )}
+        <button type="submit" className="ov-button-primary" disabled={connecting}>
+          Join Office
         </button>
-      )}
-      {connecting && (
-        <p role="status" style={{ margin: 0 }}>
-          Connecting to the office…
-        </p>
-      )}
-      <button type="submit" disabled={connecting}>
-        Join Office
-      </button>
-    </form>
+      </form>
+    </main>
   );
 }
+
+const page: CSSProperties = {
+  boxSizing: 'border-box',
+  height: '100%',
+  overflowY: 'auto',
+  padding: `12vh ${space[4]} ${space[4]}`,
+  background: color.page,
+};
+const card: CSSProperties = {
+  boxSizing: 'border-box',
+  maxWidth: 400,
+  margin: '0 auto',
+  display: 'grid',
+  gap: space[4],
+  padding: space[5],
+  color: color.text,
+  background: color.surfaceLight,
+  borderRadius: radius.lg,
+  boxShadow: shadow[2],
+  fontFamily: font.family,
+  fontSize: font.md,
+  lineHeight: font.lineHeight,
+};
+const field: CSSProperties = {
+  display: 'grid',
+  gap: space[1],
+  fontWeight: font.bold,
+  fontSize: font.sm,
+};

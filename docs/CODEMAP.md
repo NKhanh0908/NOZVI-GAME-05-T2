@@ -36,6 +36,8 @@ Phase 2 extras: `apps/web/src/game/interaction/extras.ts` sends drink and sofa-s
 
 Phase 2 identity: `apps/web/src/ui/JoinScreen.tsx` validates the join form, shows connecting and join-error states (Phase 3); `identityStorage.ts` safely persists drafts (tests: `apps/web/test/identityStorage.test.ts`). `App.tsx` owns join/exit lifecycle (one `Connection`; the joined room reaches `Game` as `netRoom`; door exit leaves the room); `apps/web/src/game/hud/Nameplate.ts` renders player and remote names and activity (label from `hud/activityLabel.ts`) through Game's CSS2D overlay; `avatar/AvatarView.ts` loads each avatar GLB once per `avatarId` and clones it.
 
+Phase 4.1 UI tokens (T-1159): `apps/web/src/ui/tokens.css` is the only place colours, spacing, radius, type scale and shadows are defined (`--ov-*`, palette from the layout `palette`); `ui/tokens.ts` gives typed `var()` references for inline styles; `ui/ui.css` holds buttons, inputs and the `:focus-visible` ring (both imported in `main.tsx`). Every 2D surface (join, list, prompt, toast, banner, TV panel) reads them. Tests: `apps/web/test/uiTokens.test.ts` (no colour literals, tokens resolve, contrast 4.5:1).
+
 ## Do not read (generated, vendored or binary)
 
 `dist/`, `build/`, `coverage/`, `node_modules/`, `assets/` binaries, `except/` images, `.token-ledger/`, lockfiles — unless the task is specifically about them.

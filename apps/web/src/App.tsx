@@ -7,6 +7,7 @@ import type { EmployeeRoster } from './ui/employeeRoster';
 import { JoinScreen, type JoinResult } from './ui/JoinScreen';
 import { ConnectionBanner } from './ui/ConnectionBanner';
 import { TvPanel } from './ui/TvPanel';
+import { font, hudPanel, space } from './ui/tokens';
 import {
   Connection,
   serverUrl,
@@ -132,14 +133,13 @@ export function App() {
       )}
       <div
         style={{
+          ...hudPanel,
           position: 'absolute',
-          bottom: 16,
-          left: 16,
-          color: '#fff',
-          background: 'rgba(34,36,38,0.8)',
-          borderRadius: 8,
-          padding: '6px 10px',
-          font: '600 12px system-ui',
+          bottom: space[4],
+          left: space[4],
+          padding: `6px ${space[3]}`,
+          fontSize: font.xs,
+          fontWeight: font.bold,
           pointerEvents: 'none',
         }}
       >
