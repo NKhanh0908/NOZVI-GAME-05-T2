@@ -9,7 +9,7 @@ export type SyncAction =
 
 /** The `BALANCE.tv` values the drift logic reads (widened so tests can vary them). */
 export type DriftBands = Record<
-  'ignoreBelowSeconds' | 'nudgeUpToSeconds' | 'nudgeRate' | 'nudgeMaxSeconds',
+  'ignoreBelowSeconds' | 'hardSeekAboveSeconds' | 'nudgeRate' | 'nudgeMaxSeconds',
   number
 >;
 
@@ -24,9 +24,9 @@ export function expectedTime(tv: TvSnapshot, serverNowMs: number): number | null
 }
 
 /**
- * REQ-TV-006: drift bands. Below 0.5 s nothing happens; 0.5 s to 2 s (both inclusive)
+ * REQ-TV-006: drift bands. Below 0.5 s nothing happens; 0.5 s to 1 s (both inclusive)
  * plays 5 % slower when ahead or faster when behind, for long enough to close the gap but
- * at most 2 s; above 2 s seeks straight to the expected time.
+ * at most 2 s; above 1 s seeks straight to the expected time (T-1375).
  */
 export function decide(
   expected: number,
@@ -36,7 +36,7 @@ export function decide(
   const drift = actual - expected;
   const size = Math.abs(drift);
   if (size < bands.ignoreBelowSeconds) return { kind: 'none' };
-  if (size > bands.nudgeUpToSeconds) return { kind: 'seek', time: expected };
+  if (size > bands.hardSeekAboveSeconds) return { kind: 'seek', time: expected };
   const rate = drift > 0 ? 1 - bands.nudgeRate : 1 + bands.nudgeRate;
   const seconds = Math.min(bands.nudgeMaxSeconds, size / bands.nudgeRate);
   return { kind: 'nudge', rate, seconds };

@@ -491,16 +491,16 @@ describe('TvBinding player readiness and rate fallback (T-1405)', () => {
     return { h, setRate, seek };
   }
 
-  it('with only quarter-step rates, a 1.2 s drift is corrected by a seek, not a nudge (T-1374)', () => {
-    const { h, setRate, seek } = driftBy(QUARTER_RATES, 1.2);
+  it('with only quarter-step rates, a 0.8 s drift is corrected by a seek, not a nudge (T-1374)', () => {
+    const { h, setRate, seek } = driftBy(QUARTER_RATES, 0.8);
     expect(setRate).not.toHaveBeenCalled();
     expect(seek).toHaveBeenCalledOnce();
     expect(h.player.state.rate).toBe(1);
     expect(Math.abs(h.player.getTime() - (h.binding.expected() ?? 0))).toBeLessThan(0.5);
   });
 
-  it('with 0.95 / 1.05 available, a 1.2 s drift still nudges (T-1374)', () => {
-    const { h, setRate, seek } = driftBy([...QUARTER_RATES, 0.95, 1.05], 1.2);
+  it('with 0.95 / 1.05 available, a 0.8 s drift still nudges (T-1374)', () => {
+    const { h, setRate, seek } = driftBy([...QUARTER_RATES, 0.95, 1.05], 0.8);
     expect(seek).not.toHaveBeenCalled();
     expect(setRate).toHaveBeenCalledWith(expect.closeTo(1.05, 9));
     expect(h.player.state.rate).toBeCloseTo(1.05, 9);

@@ -67,6 +67,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Changed
 
+- TV drift bands (T-1375, REQ-TV-006): hard seek above 1 s instead of 2 s, rate nudge only for 0.5 to 1 s, so drift above the 1.0 s target is corrected within one 1 s check; `BALANCE.tv.nudgeUpToSeconds` removed, `hardSeekAboveSeconds` (now 1) is the single key the sync reads. Unit tests for convergence within `convergenceSeconds`; T-1374 tests for the seek-only fallback with the quarter-step rates the real YouTube player lists.
+
 - Avatar render cost (T-1161): each avatar GLB is merged at load into one skinned mesh with one vertex-coloured material (`apps/web/src/game/avatar/mergeSkinned.ts`; 10 primitives -> 1, look unchanged); remote avatars no longer cast real shadows and draw a shared soft blob shadow instead. Per remote avatar 20 -> 2 draw calls; 10 employees at the spawn view 285 -> 105 calls and 149.5k -> 90.0k triangles (headless SwiftShader). The local avatar keeps its real shadow (20 -> 2 calls as well).
 
 - Instanced static furniture (T-1148, plan §3.1.2): `loadFurniture` batches placements by model and draws a repeated model as one `InstancedMesh` per part (29 models → 19 instanced meshes + 7 single models); only layout boxes of at least 0.05 m³ cast shadows (all current furniture, so desk props added later only receive); the camera hides an occluding instance through `game/occluderHider.ts`; `loadFurniture` returns a disposable handle and `getFurniture()` also reports `instancedMeshes`. Spawn view 174 → 105 draw calls with one employee, 354 → 285 with ten; screenshots unchanged. Unit tests in `test/furnitureInstancing.test.ts` and `test/fit.test.ts`.

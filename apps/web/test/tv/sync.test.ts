@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TvSnapshot } from '@office/protocol';
+import { BALANCE, type TvSnapshot } from '@office/protocol';
 import {
   ClockOffsetEstimator,
   DriftController,
@@ -22,20 +22,21 @@ describe('decide (REQ-TV-006 bands)', () => {
   it.each([
     [0.4, 'none'],
     [0.5, 'nudge'],
-    [1.2, 'nudge'],
-    [2.0, 'nudge'],
+    [0.8, 'nudge'],
+    [1.0, 'nudge'],
+    [1.2, 'seek'],
     [3, 'seek'],
   ] as const)('drift %s s gives %s', (drift, kind) => {
     expect(decide(10, 10 + drift).kind).toBe(kind);
     expect(decide(10, 10 - drift).kind).toBe(kind);
   });
   it('slows down when ahead and speeds up when behind, for at most 2 s', () => {
-    expect(decide(10, 11.2)).toEqual({ kind: 'nudge', rate: 0.95, seconds: 2 });
-    expect(decide(10, 8.8)).toEqual({ kind: 'nudge', rate: 1.05, seconds: 2 });
+    expect(decide(10, 10.8)).toEqual({ kind: 'nudge', rate: 0.95, seconds: 2 });
+    expect(decide(10, 9.2)).toEqual({ kind: 'nudge', rate: 1.05, seconds: 2 });
     // 0.05 s closes in 1 s at 5 %, so a tiny drift gets a short nudge (bands patched).
     const bands = {
       ignoreBelowSeconds: 0.01,
-      nudgeUpToSeconds: 2,
+      hardSeekAboveSeconds: 2,
       nudgeRate: 0.05,
       nudgeMaxSeconds: 2,
     };
@@ -86,13 +87,13 @@ describe('DriftController (REQ-TV-006)', () => {
 
   it('starts a nudge, holds it, then ends it after its duration', () => {
     const ctl = new DriftController(clock());
-    expect(ctl.check(playing(0), { time: 11.2 }, T0 + 10_000)).toEqual({
+    expect(ctl.check(playing(0), { time: 10.8 }, T0 + 10_000)).toEqual({
       kind: 'rate',
       rate: 0.95,
     });
     expect(ctl.nudging).toBe(true);
-    expect(ctl.check(playing(0), { time: 12.1 }, T0 + 11_000)).toEqual({ kind: 'none' });
-    expect(ctl.check(playing(0), { time: 13.1 }, T0 + 12_000)).toEqual({ kind: 'rate', rate: 1 });
+    expect(ctl.check(playing(0), { time: 11.75 }, T0 + 11_000)).toEqual({ kind: 'none' });
+    expect(ctl.check(playing(0), { time: 12.7 }, T0 + 12_000)).toEqual({ kind: 'rate', rate: 1 });
     expect(ctl.nudging).toBe(false);
   });
   it('a hard seek interrupts a nudge', () => {
@@ -137,5 +138,41 @@ describe('onBecameVisible (REQ-TV-006)', () => {
     off();
     target.dispatchEvent(new Event('visibilitychange'));
     expect(onVisible).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('convergence (T-1375)', () => {
+  /** Simulates a player under the controller: 1 s checks, rate applied between checks. */
+  function run(drift: number) {
+    const c = new ClockOffsetEstimator();
+    c.addSample(T0, T0);
+    const ctl = new DriftController(c);
+    let time = 10 + drift;
+    let rate = 1;
+    const errors: number[] = [];
+    for (let s = 1; s <= BALANCE.tv.convergenceSeconds; s++) {
+      time += rate;
+      const now = T0 + (10 + s) * 1000;
+      const cmd = ctl.check(playing(0), { time }, now);
+      if (cmd.kind === 'seek') time = cmd.time;
+      else if (cmd.kind === 'rate') rate = cmd.rate;
+      errors.push(Math.abs(time - (10 + s)));
+    }
+    return errors;
+  }
+
+  it.each([1.0, -1.0, 1.01, 2, 5])(
+    'a drift of %s s is under driftTargetSeconds within convergenceSeconds',
+    (drift) => {
+      const errors = run(drift);
+      expect(errors.at(-1)!).toBeLessThanOrEqual(BALANCE.tv.driftTargetSeconds);
+      // Above the nudge band the first check already seeks.
+      if (Math.abs(drift) > BALANCE.tv.hardSeekAboveSeconds) expect(errors[0]).toBe(0);
+    },
+  );
+
+  it('a drift at the top of the nudge band shrinks while nudging', () => {
+    const errors = run(1.0);
+    expect(errors.at(-1)!).toBeLessThan(1.0);
   });
 });

@@ -97,10 +97,12 @@ export const BALANCE = {
   tv: {
     /** Drift below this many seconds is left alone. */
     ignoreBelowSeconds: 0.5,
-    /** Drift from ignoreBelowSeconds up to this many seconds is corrected with a rate nudge. */
-    nudgeUpToSeconds: 2,
-    /** Drift above nudgeUpToSeconds is corrected with a hard seek. */
-    hardSeekAboveSeconds: 2,
+    /**
+     * Drift from ignoreBelowSeconds up to this many seconds (inclusive) is corrected with a
+     * rate nudge; above it, with a hard seek (T-1375: 1 s, so any drift above the 1.0 s target
+     * is gone on the next 1 s check and convergence stays within convergenceSeconds).
+     */
+    hardSeekAboveSeconds: 1,
     /** A nudge plays at 1 +/- this rate (0.05 = 5 %). */
     nudgeRate: 0.05,
     /** A single nudge lasts at most this long. */

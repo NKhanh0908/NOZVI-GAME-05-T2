@@ -350,9 +350,9 @@ All employees can control TV by default. Serialize commands in room order, proce
 
 **Phase:** P4. **Sources:** SRS §3.4 “Synchronization”; ROAD Phase 4 acceptance; ARCH §5.
 
-Use server-timestamped playback state. Apply accepted correction bands: below 0.5 s drift, ignore; 0.5–2 s, playback-rate nudge; above 2 s, hard seek. Resynchronize on visibilitychange. Target drift under 1.0 s across clients after 5 s convergence, tunable in balance config.
+Use server-timestamped playback state. Apply accepted correction bands: below 0.5 s drift, ignore; 0.5–1 s, playback-rate nudge; above 1 s, hard seek (owner-delegated decision 2026-11-18, T-1375; was 0.5–2 s). Resynchronize on visibilitychange. Target drift under 1.0 s across clients after 5 s convergence, tunable in balance config.
 
-**Acceptance:** Unit: test drift values below 0.5 s, at 0.5 s, within the middle band, at 2 s and above 2 s against the stated actions. Playwright: hide/restore a client and observe resync. Playwright: under 100 ms RTT and 1% loss over a 10 min run, verify drift under 1.0 s across clients after 5 s convergence; defaults are tunable in balance config. Remaining nudge/clock/timing semantics are OQ-023.
+**Acceptance:** Unit: test drift values below 0.5 s, at 0.5 s, within the middle band, at 1 s and above 1 s against the stated actions; a drift at the top of the nudge band is under the 1.0 s target within the 5 s convergence. Playwright: hide/restore a client and observe resync. Playwright: under 100 ms RTT and 1% loss over a 10 min run, verify drift under 1.0 s across clients after 5 s convergence; defaults are tunable in balance config. Remaining nudge/clock/timing semantics are OQ-023.
 
 ### REQ-TV-007 — Provider abstraction and video metadata
 

@@ -300,3 +300,10 @@ Context: The first full CI e2e run of PR #4 after the Phase 4.1 visual tasks too
 Choice: `e2e` quality (Playwright only) draws no shadow maps, like it already skips post-processing and the PMREM environment; `high` quality is unchanged. Test thresholds and timeouts stay as they are.
 Alternatives: Raising test timeouts or lowering the frame-count threshold (hides the cost instead of removing it); dropping decor in `e2e` (loses coverage of what the specs check).
 Consequence: e2e screenshots show no cast shadows; shadow look is judged on real hardware (owner checks, T-1160).
+
+## 2026-11-18 — TV hard seek above 1 s; one threshold key (T-1375)
+
+Context: REQ-TV-006 nudged drift of 0.5 to 2 s at ±5 % for at most 2 s per nudge, which closes 0.1 s per nudge: a 1.5 to 2 s drift took 20 to 30 s, against `BALANCE.tv.convergenceSeconds` 5 s. T-1374 also found that the real YouTube player lists only quarter-step rates, so 0.95 / 1.05 nudges fall back to seeks on most videos anyway. `BALANCE.tv` held two keys for the same threshold (`nudgeUpToSeconds`, read; `hardSeekAboveSeconds`, never read).
+Choice (owner delegated the technical choice on 2026-11-18; option b of T-1375): hard seek above 1 s, nudge only 0.5 to 1 s. Any drift above the 1.0 s target is seeked on the next 1 s check, and a nudge-band drift is already within the target, so the 5 s convergence holds. `hardSeekAboveSeconds: 1` is the single key `sync.ts` reads; `nudgeUpToSeconds` is removed.
+Alternatives: (a) raise `convergenceSeconds` to about 30 s (contradicts the FEAT-67 outcome); (c) longer or stronger nudges (the real player does not offer the rates).
+Consequence: drift between 1 and 2 s now causes a visible jump instead of a slow speed change. Owner can tune the threshold in `BALANCE.tv`. SPEC REQ-TV-006, ARCHITECTURE and plan phase-4 updated.

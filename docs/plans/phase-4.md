@@ -28,7 +28,7 @@
 
 - Room state gains `tv: SharedTVState { videoId: string | null, provider: 'youtube', status: 'idle' | 'playing' | 'paused', currentTime: number, updatedAt: number, controllerSessionId: string | null }` (REQ-TV-004). `currentTime` is in seconds of video time at `updatedAt`, and `updatedAt` is server epoch milliseconds (default for OQ-023).
 - Client to server message: `tv { type: 'load', videoId } | { type: 'play' } | { type: 'pause' } | { type: 'seek', time } | { type: 'stop' }`. The validator rejects unknown types, non-finite or negative times and video ids that fail the YouTube id pattern (11 characters `[A-Za-z0-9_-]`).
-- `BALANCE.tv`: drift ignore below 0.5 s, nudge 0.5 to 2 s, hard seek above 2 s, nudge rate ±5 % for at most 2 s, convergence 5 s, drift target 1.0 s, rate limit 5 commands per 10 s per client.
+- `BALANCE.tv`: drift ignore below 0.5 s, nudge 0.5 to 1 s, hard seek above 1 s (T-1375; was 2 s), nudge rate ±5 % for at most 2 s, convergence 5 s, drift target 1.0 s, rate limit 5 commands per 10 s per client.
 - `PROTOCOL_VERSION` moves to 3.
 
 ### 3.2 Server (`apps/server`)
@@ -73,7 +73,7 @@ State of each item, with evidence or the open gap: §10.
 
 - The TV sits on the entertainment wall. The video shows inside the screen frame, and a nearer object hides it correctly while orbiting (manual, screenshots opened by a person).
 - Selecting a catalog item or a pasted YouTube URL plays on every client in the room. Play, pause, seek and change video sync, Stop stops everyone, and Close leaves others playing (Playwright with 3 pages and the fake player).
-- Drift unit tests cover below 0.5 s, exactly 0.5 s, the middle band, exactly 2 s and above 2 s. A hidden tab resyncs when it becomes visible again.
+- Drift unit tests cover below 0.5 s, exactly 0.5 s, the middle band, exactly 1 s and above 1 s (T-1375; was 2 s). A hidden tab resyncs when it becomes visible again.
 - Under `NET_PROFILE=test` for 10 minutes, the drift between clients stays under 1.0 s after 5 s of convergence (recorded with the fake player plus one manual run with real YouTube).
 - More than 5 TV commands in 10 s from one client are refused without changing state.
 - An embedding-blocked video shows a per-video error. A real blocked fixture is recorded, or the gap is listed openly (OQ-025).
@@ -133,7 +133,7 @@ Observed result: **pass** (max 0.205 s < 1.0 s). A client's error is about its p
 - Public-domain collections (for example Wikimedia Commons, Library of Congress): free to reuse, but mostly plain files, so they would need an HTML5 video provider and hosting bandwidth. Research only.
 - Jellyfin: free, open-source, self-hosted media server for an internal library; needs an always-on host, storage and its own logins, which conflicts with zero cost and no accounts. Research only.
 
-**Real YouTube nudge rates (T-1374, 2026-11-18)**: probe page with the IFrame API (muted autoplay, `origin` set) in the container's headless Chromium, catalog ids `aqz-KE-bpKQ` and `eRsGyueVLvQ`. `getAvailablePlaybackRates()` returned `[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]` for both: 0.95 and 1.05 are **not** listed, so `YouTubeTvPlayer.supportsRate` refuses them and `TvBinding` corrects nudge-band drift with a seek (seek-only fallback, unit tests in `tvBinding.test.ts`). Playback itself did not start in the container: both videos reported IFrame error 150 after buffering (the headless browser is refused; the same ids pass oEmbed), so `getPlaybackRate()` after a set only echoed the request and is not evidence. Still open (owner): in a real browser, open the TV with two windows, confirm in `window.__tvLog` (DEV) that rates list only quarter steps and that a drift of 0.5-2 s ends with a seek, not a rate change.
+**Real YouTube nudge rates (T-1374, 2026-11-18)**: probe page with the IFrame API (muted autoplay, `origin` set) in the container's headless Chromium, catalog ids `aqz-KE-bpKQ` and `eRsGyueVLvQ`. `getAvailablePlaybackRates()` returned `[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]` for both: 0.95 and 1.05 are **not** listed, so `YouTubeTvPlayer.supportsRate` refuses them and `TvBinding` corrects nudge-band drift with a seek (seek-only fallback, unit tests in `tvBinding.test.ts`). Playback itself did not start in the container: both videos reported IFrame error 150 after buffering (the headless browser is refused; the same ids pass oEmbed), so `getPlaybackRate()` after a set only echoed the request and is not evidence. Still open (owner): in a real browser, open the TV with two windows, confirm in `window.__tvLog` (DEV) that rates list only quarter steps and that a drift of 0.5-1 s ends with a seek, not a rate change.
 
 **Phase acceptance (§5)**
 
