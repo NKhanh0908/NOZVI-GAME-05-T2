@@ -60,6 +60,12 @@ export type RemoteInfo = {
   typing: number;
   /** Emote as drawn ('' = none; T-1222). */
   emote: EmoteId | '';
+  /**
+   * The interpolation time (ms, `performance.now` base minus the delay) the drawn pose was
+   * sampled at, or null before the first sample or while seated. Lets e2e measure speed on
+   * the same time base the avatar is drawn with.
+   */
+  sampledAt: number | null;
 };
 
 type Remote = {
@@ -76,6 +82,7 @@ type Remote = {
   seatId: string;
   view: RemoteView | null;
   disposed: boolean;
+  sampledAt: number | null;
 };
 
 const DEFAULT_DEPS: RemoteAvatarsDeps = {
@@ -226,6 +233,7 @@ export class RemoteAvatars {
       seatId,
       view: null,
       disposed: false,
+      sampledAt: null,
     };
     snapshot();
     this.remotes.set(id, remote);
@@ -266,7 +274,9 @@ export class RemoteAvatars {
     // REQ-INT-002: a seated employee sits on the socket with the seated animation; the
     // interpolated position (100 ms behind) would still be walking toward the chair.
     const socket = seatSocket(remote.employee.seatId);
-    const pose = socket ? seatPose(socket) : remote.buffer.sample(renderTime(this.deps.now()));
+    const t = renderTime(this.deps.now());
+    const pose = socket ? seatPose(socket) : remote.buffer.sample(t);
+    remote.sampledAt = pose && !socket ? t : null;
     if (pose) {
       remote.group.position.set(pose.x, 0, pose.z);
       remote.group.rotation.y = pose.heading;
@@ -301,6 +311,7 @@ export class RemoteAvatars {
       status: r.status,
       typing: r.view?.typing ?? 0,
       emote: r.emote,
+      sampledAt: r.sampledAt,
     }));
   }
 

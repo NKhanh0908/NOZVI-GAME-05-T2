@@ -171,6 +171,8 @@ describe('RemoteAvatars (REQ-NET-004, REQ-UI-001)', () => {
     const [info] = t.remotes.list();
     expect(info!.x).toBeCloseTo(0.8, 9);
     expect(info!.heading).toBeCloseTo(0.4, 9);
+    // The pose reports the render time it was sampled at (debug hook time base).
+    expect(info!.sampledAt).toBe(200);
     expect(info!.activity).toBe('walking');
     expect(t.views[0]!.activities.at(-1)).toBe('walking');
     t.source.change(e, { activity: 'working' });
@@ -203,7 +205,7 @@ describe('RemoteAvatars (REQ-NET-004, REQ-UI-001)', () => {
     let info = t.remotes.list()[0]!;
     // Placed on the socket at once, although render time is still 100 ms in the past.
     expect([info.x, info.z, info.heading]).toEqual([0.66, 1.2, Math.PI / 2]);
-    expect(info).toMatchObject({ activity: 'sitting', seatId: 'ws_5_seat' });
+    expect(info).toMatchObject({ activity: 'sitting', seatId: 'ws_5_seat', sampledAt: null });
     expect(t.views[0]!.activities.at(-1)).toBe('sitting');
     t.source.change(e, { activity: 'working' });
     t.remotes.update(0.016);
