@@ -27,8 +27,17 @@ export function castsShadow(box: LayoutBox): boolean {
   return box.size[0] * box.size[1] * box.size[2] >= SHADOW_MIN_VOLUME;
 }
 
-/** One model drawn at one layout box. Placements that share a file are instanced together. */
-export type FurniturePlacement = { box: LayoutBox; file: string; rotY: number };
+/**
+ * One model drawn at one layout box. Placements that share a file are instanced together.
+ * A placement replaces the palette box of the same id; a `standalone` one (desk props, T-1152)
+ * has no palette box and is simply added.
+ */
+export type FurniturePlacement = {
+  box: LayoutBox;
+  file: string;
+  rotY: number;
+  standalone?: boolean;
+};
 
 /** Layout items that have a model in the manifest. Later desk props add their own placements. */
 export function furniturePlacements(layout: OfficeLayout): FurniturePlacement[] {
@@ -135,6 +144,11 @@ export type FurnitureSummary = {
   failed: string[];
   /** InstancedMesh objects in the room, one per repeated model part. */
   instancedMeshes: number;
+  /**
+   * Per model file: placements drawn, meshes added to the room and parts (meshes) in the
+   * source model. `meshes === parts` means repeats cost no extra draw call (T-1152).
+   */
+  models: Record<string, { placements: number; meshes: number; parts: number }>;
 };
 
 export type FurnitureHandle = FurnitureSummary & {
@@ -149,6 +163,7 @@ export async function loadFurniture(
 ): Promise<FurnitureHandle> {
   const failed: string[] = [];
   const added: THREE.Object3D[] = [];
+  const models: FurnitureSummary['models'] = {};
   let loaded = 0;
   // One batch per model file and shadow flag: an InstancedMesh casts for all its instances.
   const batches = new Map<string, FurniturePlacement[]>();
@@ -158,7 +173,7 @@ export async function loadFurniture(
   }
   await Promise.all(
     [...batches.values()].map(async (batch) => {
-      const present = batch.filter((p) => room.getObjectByName(p.box.id));
+      const present = batch.filter((p) => p.standalone || room.getObjectByName(p.box.id));
       if (present.length === 0) return;
       let source: THREE.Group;
       try {
@@ -169,16 +184,24 @@ export async function loadFurniture(
       }
       const instanced = present.length > 1 ? instanceModel(source, present) : undefined;
       const objects = instanced ?? present.map((p) => fitModel(source, p.box, p.rotY));
-      for (const p of present) room.remove(room.getObjectByName(p.box.id)!);
+      for (const p of present) {
+        const box = p.standalone ? undefined : room.getObjectByName(p.box.id);
+        if (box) room.remove(box);
+      }
       for (const object of objects) room.add(object);
       added.push(...objects);
       loaded += present.length;
+      const file = batch[0]!.file;
+      const entry = (models[file] ??= { placements: 0, meshes: 0, parts: meshesOf(source).length });
+      entry.placements += present.length;
+      entry.meshes += objects.reduce((n, o) => n + meshesOf(o).length, 0);
     }),
   );
   return {
     loaded,
     failed,
     instancedMeshes: added.filter((o) => (o as THREE.InstancedMesh).isInstancedMesh).length,
+    models,
     dispose() {
       for (const object of added) {
         object.removeFromParent();

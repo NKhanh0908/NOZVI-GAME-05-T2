@@ -18,8 +18,9 @@ export const FURNITURE: Record<string, string> = {
 export const DESK_SCREEN = 'computerScreen.glb';
 export const COFFEE_MACHINE = 'kitchenCoffeeMachine.glb';
 
-// Phase 4.1 props (T-1147, owner list in DECISIONS 2026-11-17). Files only: nothing places them yet
-// (tasks 6, 7, 10 and 14 do). Kenney Furniture Kit 2.0, served from `/assets/furniture/`.
+// Phase 4.1 props (T-1147, owner list in DECISIONS 2026-11-17). Desk props are placed by
+// `deskProps.ts` (T-1152); the rest wait for tasks 6, 10 and 14. Kenney Furniture Kit 2.0,
+// served from `/assets/furniture/`.
 export const FURNITURE_PROPS = {
   keyboard: 'computerKeyboard.glb',
   mouse: 'computerMouse.glb',

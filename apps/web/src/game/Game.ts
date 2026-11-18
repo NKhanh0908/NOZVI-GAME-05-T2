@@ -15,7 +15,8 @@ import { Player } from './player';
 import { setupLighting } from './lighting';
 import { buildRoom } from './room';
 import { renderQuality, type RenderQuality } from './renderQuality';
-import { loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
+import { deskProps } from './assets/deskProps';
+import { furniturePlacements, loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
 import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
 import { Nameplate } from './hud/Nameplate';
@@ -143,7 +144,13 @@ export class Game {
     office.traverse((o) => {
       if (o.userData.occluder) occluders.push(o);
     });
-    void loadFurniture(office, officeLayout).then((result) => {
+    // T-1152: desk props (screen, keyboard, mouse, lamp, stationery, decor) load with the
+    // furniture, so repeats share one InstancedMesh per model part.
+    const placements = [
+      ...furniturePlacements(officeLayout),
+      ...deskProps(officeLayout).map((p) => p.placement),
+    ];
+    void loadFurniture(office, officeLayout, placements).then((result) => {
       if (this.disposed) return result.dispose();
       this.furniture = result;
       occluders.length = 0;
@@ -196,7 +203,19 @@ export class Game {
             loaded: this.furniture.loaded,
             failed: this.furniture.failed,
             instancedMeshes: this.furniture.instancedMeshes,
+            models: this.furniture.models,
           },
+        /** T-1152: the props drawn on one desk, with the model each one uses. */
+        getDeskProps: (deskId: string) =>
+          deskProps(officeLayout)
+            .filter((p) => p.deskId === deskId)
+            .map((p) => ({
+              id: p.placement.box.id,
+              type: p.type,
+              file: p.placement.file,
+              loaded:
+                this.furniture !== undefined && !this.furniture.failed.includes(p.placement.box.id),
+            })),
         getActivity: () => this.player.activity,
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
