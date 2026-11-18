@@ -5,6 +5,7 @@ import {
   buildCeilingFixtures,
   ceilingFixturePositions,
   setupEnvironment,
+  shadowsEnabled,
   type EnvironmentDeps,
 } from '../src/game/lighting';
 
@@ -98,5 +99,12 @@ describe('environment (T-1149)', () => {
     env.dispose();
     await env.ready;
     expect(probe.parent).toBeNull();
+  });
+});
+
+describe('shadows by render quality (PR #4 CI fix)', () => {
+  it('draws shadow maps in high quality only', () => {
+    expect(shadowsEnabled('high')).toBe(true);
+    expect(shadowsEnabled('e2e')).toBe(false);
   });
 });

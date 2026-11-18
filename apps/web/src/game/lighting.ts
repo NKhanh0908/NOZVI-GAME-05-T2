@@ -7,6 +7,18 @@ import { renderQuality, type RenderQuality } from './renderQuality';
 const R = BALANCE.rendering;
 
 /**
+ * Shadow maps are drawn in `high` only. In `e2e` (headless SwiftShader in Playwright) the
+ * shadow pass was about 40 % of the draw calls and most of the per-pixel cost once Phase 4.1
+ * added desk props, decor and shell details: spawn-view FPS fell from 8.3 to 5.8 with one
+ * employee and 4.4 to 2.7 with three, so multi-page specs missed frames and timed out (PR #4
+ * CI, 2026-11-18). Without shadows `e2e` measures 8.8 / 4.7; real-hardware rendering is
+ * unchanged.
+ */
+export function shadowsEnabled(quality: RenderQuality): boolean {
+  return quality === 'high';
+}
+
+/**
  * Configures colour output, tone mapping, image-based fill, the window sun and the emissive
  * ceiling panels. The sun's orthographic shadow camera is fitted tightly around `bounds`
  * (the room) in light space. `ready` resolves once the image-based fill is in place (see
@@ -24,7 +36,7 @@ export function setupLighting(
     R.toneMapping === 'aces' ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping;
   renderer.toneMappingExposure = R.exposure;
   // r187 removed PCFSoftShadowMap; PCFShadowMap now does soft Vogel-disk filtering via shadow.radius.
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = shadowsEnabled(quality);
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   scene.background = new THREE.Color(R.background);

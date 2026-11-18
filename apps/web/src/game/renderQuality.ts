@@ -3,7 +3,7 @@
  * hardware; `e2e` is the low setting Playwright builds use (headless SwiftShader WebGL),
  * so later Phase 4.1 tasks can turn off costly effects such as post-processing and
  * environment reflections there. T-1150: post-processing (`postProcessing.ts`) is on in
- * `high` only.
+ * `high` only. Shadow maps are `high` only too (`lighting.ts` `shadowsEnabled`).
  */
 export type RenderQuality = 'high' | 'e2e';
 

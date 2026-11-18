@@ -293,3 +293,10 @@ Choice: Classify by material name (`materials.ts`), not by model, and only touch
 Alternatives: Per-model material overrides (more data, same look); keeping the probe in `high` beside the environment (doubles the diffuse fill); a palette colour for plastic (the layout palette has no electronics entry).
 Consequence: Every wood surface (desks, shelves, cabinets, sofa legs, plant pots, cardboard box) becomes walnut and every light metal becomes white; metal (metalness 0.4) looks darker in `e2e`, which has no specular environment. `setupLighting` reads the quality from `VITE_RENDER_QUALITY` unless a caller passes it.
 Update (lead, 2026-11-18, on merge): the table no longer recolours wood and metal from the palette. Matching by Kenney material name also turned the bear, the cardboard box, plant pots and lamp stands walnut or white; classes now set roughness and metalness only and keep the Kenney colours. The `palette` key stays in the table type for a later per-model override.
+
+## 2026-11-18 — No shadow maps in `e2e` render quality
+
+Context: The first full CI e2e run of PR #4 after the Phase 4.1 visual tasks took 22 min (about 10 before) and failed `remote.spec` (3 to 4 walking frames sampled, at least 5 needed) and the three-page TV error spec (120 s timeout). Spawn-view FPS under SwiftShader fell from 8.3 to 5.8 with one employee and 4.4 to 2.7 with three. Per-commit measurements showed no single culprit (props, shell details, lighting and decor each cost a little); a floor texture or cheaper shadow filtering changed almost nothing, while disabling the shadow pass restored 8.8 / 4.7.
+Choice: `e2e` quality (Playwright only) draws no shadow maps, like it already skips post-processing and the PMREM environment; `high` quality is unchanged. Test thresholds and timeouts stay as they are.
+Alternatives: Raising test timeouts or lowering the frame-count threshold (hides the cost instead of removing it); dropping decor in `e2e` (loses coverage of what the specs check).
+Consequence: e2e screenshots show no cast shadows; shadow look is judged on real hardware (owner checks, T-1160).

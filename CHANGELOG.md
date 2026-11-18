@@ -78,6 +78,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Fixed
 
+- PR #4 CI e2e red (2026-11-18): with the Phase 4.1 props, decor and shell details, headless SwiftShader rendering fell to 5.8 FPS (one employee) and 2.7 FPS (three), so `remote.spec` caught too few walking frames and the three-page TV error spec timed out. Shadow maps are now drawn in `high` quality only (`lighting.ts` `shadowsEnabled`); `e2e` measures 8.8 / 4.7 FPS, above the pre-Phase 4.1 8.3 / 4.4. Real-hardware rendering is unchanged.
+
 - Desk screens, keyboards and mice faced away from the chair (owner report 2026-11-18): Kenney models face +Z at rotY 0 while the layout gives these components the seat's rotY; they now face the seat (seat rotY + 180°). Unit test checks every desk.
 
 - TV error text for IFrame error 2 (T-1405): it said "The video id is not valid" although pasted ids are validated first; owner logs show YouTube refusing one specific video 0.1 s after cue while every other pasted link plays, so it now says YouTube refused to play the video outside youtube.com.
