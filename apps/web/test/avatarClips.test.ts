@@ -100,13 +100,23 @@ it.each(['men_suit', 'women_suit'] as const)(
         const handPosition = hand.getWorldPosition(new THREE.Vector3());
         expect(handPosition.y - shoulder.y).toBeGreaterThan(0.2);
         const heading = view.root.getWorldQuaternion(new THREE.Quaternion());
-        const raisedDirection = new THREE.Vector3(0.35, 0.9, 0)
-          .normalize()
-          .applyQuaternion(heading);
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(heading);
+        // The avatar's right is the side of the right shoulder (owner report 2026-11-18: the
+        // old fixed local +X raised the right arm across the head).
+        const leftShoulder = view.root
+          .getObjectByName('UpperArmL')!
+          .getWorldPosition(new THREE.Vector3());
+        const right = shoulder.clone().sub(leftShoulder);
+        right.sub(up.clone().multiplyScalar(right.dot(up))).normalize();
+        const raisedDirection = up
+          .clone()
+          .multiplyScalar(0.6)
+          .addScaledVector(right, 0.8)
+          .normalize();
         expect(elbow.clone().sub(shoulder).normalize().dot(raisedDirection)).toBeGreaterThan(0.99);
         const beforeSwing = handPosition.clone().sub(elbow).normalize();
-        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(heading);
-        expect(beforeSwing.dot(up)).toBeGreaterThan(0.99);
+        const forearmDirection = up.clone().addScaledVector(right, 0.1).normalize();
+        expect(beforeSwing.dot(forearmDirection)).toBeGreaterThan(0.99);
         now.mockReturnValue((Math.PI / 20) * 1000);
         view.update(1 / 60);
         view.root.updateMatrixWorld(true);
@@ -352,6 +362,30 @@ it.each(['men_suit', 'women_suit'] as const)(
         expect(poseDifference(reference, emoting), `${posture} ${id} after`).toBeLessThan(0.02);
         for (const v of new Set([plain, emoting, reference])) v.dispose();
       }
+    }
+  },
+);
+
+it.each(['men_suit', 'women_suit'] as const)(
+  'owner report 2026-11-18: %s waves and stretches with each hand on its own side',
+  async (avatarId) => {
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(loadLocalGltf);
+    for (const emote of ['wave', 'stretch'] as const) {
+      const view = await AvatarView.load(avatarId);
+      // Turned, so a fixed local axis would not pass by accident.
+      view.root.rotation.y = 2.1;
+      view.setEmote(emote);
+      for (let i = 0; i < 30; i++) view.update(0.05);
+      view.root.updateWorldMatrix(true, true);
+      const at = (n: string) => view.root.getObjectByName(n)!.getWorldPosition(new THREE.Vector3());
+      const right = at('UpperArmR').sub(at('UpperArmL')).setY(0).normalize();
+      const centre = at('UpperArmR').add(at('UpperArmL')).multiplyScalar(0.5);
+      // The raised right hand stays right of the body centre, the left one left of it.
+      expect(at('HandR').sub(centre).dot(right), `${emote} right hand`).toBeGreaterThan(0.05);
+      expect(at('HandR').y, `${emote} right hand raised`).toBeGreaterThan(at('UpperArmR').y);
+      if (emote === 'stretch')
+        expect(at('HandL').sub(centre).dot(right), `${emote} left hand`).toBeLessThan(-0.05);
+      view.dispose();
     }
   },
 );
