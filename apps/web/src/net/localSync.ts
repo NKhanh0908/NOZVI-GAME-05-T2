@@ -5,8 +5,13 @@ type StateChange<S> = ((callback: (state: S) => void) => unknown) & {
   remove(callback: (state: S) => void): void;
 };
 
-/** The replicated fields of the local employee: position for reconciliation, plus seat. */
-export type LocalSnapshot = ServerSnapshot & { readonly activity: string; readonly seatId: string };
+/** The replicated fields of the local employee: position for reconciliation, seat, emote. */
+export type LocalSnapshot = ServerSnapshot & {
+  readonly activity: string;
+  readonly seatId: string;
+  /** Running emote id ('' or absent = none; REQ-AVATAR-004). */
+  readonly emote?: string;
+};
 
 /** The part of the joined room the local prediction uses; tests substitute a fake. */
 export type PredictionRoom<S = { employees: { get(id: string): LocalSnapshot | undefined } }> = {

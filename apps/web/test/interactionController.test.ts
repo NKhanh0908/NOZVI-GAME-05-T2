@@ -85,13 +85,34 @@ describe('InteractionController', () => {
     expect(sent).toEqual([]);
   });
 
-  it('sends wave only when the activity allows it', () => {
+  it('G sends the wave emote when the activity allows it (T-1222)', () => {
     const { p, c, sent } = setup({ x: 0, z: 0, heading: 0 });
     c.wave();
-    expect(sent).toEqual([{ type: 'wave' }]);
+    expect(sent).toEqual([{ type: 'emote', emote: 'wave' }]);
+    // Seated employees can wave too (protocol canEmote); not while drinking.
     p.activity = 'sitting';
     c.wave();
-    expect(sent).toHaveLength(1);
+    p.activity = 'drinking';
+    c.wave();
+    expect(sent).toEqual([
+      { type: 'emote', emote: 'wave' },
+      { type: 'emote', emote: 'wave' },
+    ]);
+  });
+
+  it('sends an emote only where the protocol allows it', () => {
+    const { p, c, sent } = setup({ x: 0, z: 0, heading: 0 });
+    expect(c.emote('dance')).toBe(true);
+    p.activity = 'working';
+    expect(c.canEmote('dance')).toBe(false);
+    expect(c.emote('dance')).toBe(false);
+    expect(c.emote('think')).toBe(true);
+    p.activity = 'brewing';
+    expect(c.emote('laugh')).toBe(false);
+    expect(sent).toEqual([
+      { type: 'emote', emote: 'dance' },
+      { type: 'emote', emote: 'think' },
+    ]);
   });
 
   it('leaves through the main door locally', () => {

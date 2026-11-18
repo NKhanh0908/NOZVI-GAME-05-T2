@@ -1,9 +1,16 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { BALANCE, type Activity, type AvatarId } from '@office/protocol';
+import { BALANCE, type Activity, type AvatarId, type EmoteId } from '@office/protocol';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
-import { applyTyping, approach, findRig, type Rig } from './overlays';
+import {
+  EMOTE_OVERLAYS,
+  applyTyping,
+  approach,
+  findRig,
+  type OverlayEmote,
+  type Rig,
+} from './overlays';
 
 export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   idle: { clip: 'Idle_Loop', loop: true },
@@ -14,6 +21,27 @@ export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   drinking: { clip: 'Interact', loop: false },
   waving: { clip: 'Idle_Loop', loop: true }, // Arm is overridden procedurally.
   brewing: { clip: 'Idle_Loop', loop: true }, // Placeholder; brewing feedback is Phase 4.1 task 10.
+};
+
+/**
+ * What plays each emote (REQ-AVATAR-004, plan §3.7): a UAL clip, the Phase 2 wave arm
+ * override, or a procedural overlay from `overlays.ts`. Emotes are a layer over the activity.
+ */
+export const EMOTE_SOURCE: Record<EmoteId, { clip: string } | { overlay: 'wave' | OverlayEmote }> =
+  {
+    wave: { overlay: 'wave' },
+    dance: { clip: 'Dance_Loop' },
+    think: { overlay: 'think' },
+    laugh: { overlay: 'laugh' },
+    stretch: { overlay: 'stretch' },
+  };
+const emoteClip = (e: EmoteId | '') => {
+  const source = e ? EMOTE_SOURCE[e] : null;
+  return source && 'clip' in source ? source.clip : null;
+};
+const emoteOverlay = (e: EmoteId | ''): OverlayEmote | null => {
+  const source = e ? EMOTE_SOURCE[e] : null;
+  return source && 'overlay' in source && source.overlay !== 'wave' ? source.overlay : null;
 };
 
 const loader = new GLTFLoader();
@@ -41,7 +69,8 @@ async function loadTemplate(avatarId: AvatarId): Promise<Template> {
   const names = new Set(
     Object.values(CLIP_FOR)
       .map((c) => c.clip)
-      .concat('Sitting_Enter', 'Sitting_Exit'),
+      .concat('Sitting_Enter', 'Sitting_Exit')
+      .concat(Object.values(EMOTE_SOURCE).flatMap((e) => ('clip' in e ? [e.clip] : []))),
   );
   const clips = ual.clips
     .filter((c) => names.has(c.name))
@@ -66,6 +95,11 @@ export class AvatarView {
   /** Blend weight of the typing overlay, 0 to 1 (T-1219). */
   private typingWeight = 0;
   private readonly rig: Rig;
+  /** The replicated emote shown over the activity ('' = none; T-1222). */
+  private emote: EmoteId | '' = '';
+  /** The overlay emote being shown or faded out, and its blend weight. */
+  private overlay: OverlayEmote | null = null;
+  private overlayWeight = 0;
 
   private constructor(
     model: THREE.Object3D,
@@ -129,6 +163,26 @@ export class AvatarView {
     else this.play(a);
   }
 
+  /**
+   * REQ-AVATAR-004 (T-1222): shows the replicated emote over the activity. A clip emote
+   * replaces the activity clip until it ends; overlays blend in and out over the cross-fade.
+   */
+  setEmote(e: EmoteId | ''): void {
+    if (e === this.emote) return;
+    const previousClip = emoteClip(this.emote);
+    this.emote = e;
+    const clip = emoteClip(e);
+    if (clip) this.fadeTo(clip, true);
+    else if (previousClip) this.play(this.activity);
+    const overlay = emoteOverlay(e);
+    if (overlay) this.overlay = overlay;
+  }
+
+  /** The emote currently shown ('' = none). */
+  get shownEmote(): EmoteId | '' {
+    return this.emote;
+  }
+
   private play(a: Activity): void {
     const spec = CLIP_FOR[a];
     this.fadeTo(spec.clip, spec.loop);
@@ -169,11 +223,20 @@ export class AvatarView {
     this.mixer.update(dt);
     this.clock += dt;
     // REQ-AVATAR-002 (T-1219): typing blends in and out over the activity cross-fade.
-    const typing = this.activity === 'working' ? 1 : 0;
-    this.typingWeight = approach(this.typingWeight, typing, dt, BALANCE.activity.crossFadeSeconds);
+    // An emote takes the arms over from typing while it runs (T-1222).
+    const fade = BALANCE.activity.crossFadeSeconds;
+    const typing = this.activity === 'working' && this.emote === '' ? 1 : 0;
+    this.typingWeight = approach(this.typingWeight, typing, dt, fade);
     applyTyping(this.root, this.rig, this.clock, this.typingWeight);
-    if (this.activity === 'waving' && this.waveTime > 0) {
-      this.waveTime -= dt;
+    if (this.overlay) {
+      const target = emoteOverlay(this.emote) === this.overlay ? 1 : 0;
+      this.overlayWeight = approach(this.overlayWeight, target, dt, fade);
+      EMOTE_OVERLAYS[this.overlay](this.root, this.rig, this.clock, this.overlayWeight);
+      if (this.overlayWeight === 0) this.overlay = null;
+    }
+    const legacyWave = this.activity === 'waving' && this.waveTime > 0;
+    if (legacyWave) this.waveTime -= dt;
+    if (legacyWave || this.emote === 'wave') {
       // GLTFLoader sanitizes the exported UpperArm.R / LowerArm.R names by removing dots.
       const arm = this.bones.find((b) => b.name === 'UpperArmR');
       const fore = this.bones.find((b) => b.name === 'LowerArmR');

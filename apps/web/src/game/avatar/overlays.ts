@@ -116,6 +116,69 @@ export function applyTyping(root: THREE.Object3D, rig: Rig, time: number, weight
   }
 }
 
+/** Rotates `bone` by `angle` (rad) about the world `axis`, on top of its current pose. */
+export function turnBone(bone: THREE.Object3D | null, axis: THREE.Vector3, angle: number): void {
+  if (!bone || angle === 0) return;
+  const world = bone.getWorldQuaternion(tmpQ);
+  world.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, angle));
+  bone.parent!.getWorldQuaternion(tmpParent).invert();
+  bone.quaternion.copy(world.premultiply(tmpParent));
+  bone.updateWorldMatrix(false, true);
+}
+
+/** World axis for leaning or nodding: a positive angle bends the bone forward. */
+const leanAxis = (f: Frame) => new THREE.Vector3().crossVectors(f.up, f.forward).normalize();
+const wave = (time: number, hz: number, phase = 0) => Math.sin(time * hz * 2 * Math.PI + phase);
+
+/** Emotes drawn as overlays (plan §3.7); `wave` keeps the Phase 2 arm override in AvatarView. */
+export type OverlayEmote = 'think' | 'laugh' | 'stretch';
+
+/** `think`: right hand to the chin, head tilted down (REQ-AVATAR-004, T-1222). */
+function applyThink(root: THREE.Object3D, rig: Rig, time: number, weight: number): void {
+  const f = frameOf(root, rig);
+  const { headNod } = BALANCE.avatar.emote.think;
+  const a = rig.right;
+  if (a) {
+    aimBone(a.upper, a.lower, dir(f, 0.6, -0.55, 0.25), weight);
+    aimBone(a.lower, a.hand, dir(f, 0.15, 1, -0.75), weight);
+    aimBone(a.hand, a.finger, dir(f, 0.35, 1, -0.2), weight);
+  }
+  turnBone(rig.head, leanAxis(f), (headNod + 0.05 * wave(time, 0.4)) * weight);
+}
+
+/** `laugh`: chest and head shake, leaning back (REQ-AVATAR-004, T-1222). */
+function applyLaugh(root: THREE.Object3D, rig: Rig, time: number, weight: number): void {
+  const f = frameOf(root, rig);
+  const { hz, chest, head } = BALANCE.avatar.emote.laugh;
+  const lean = leanAxis(f);
+  turnBone(rig.chest, lean, (-chest + chest * wave(time, hz)) * weight);
+  turnBone(rig.head, lean, (-head * 0.5 + head * wave(time, hz, 0.6)) * weight);
+  turnBone(rig.head, f.forward, head * 0.4 * wave(time, hz / 2) * weight);
+}
+
+/** `stretch`: both arms raised overhead, chest leaning back and swaying (T-1222). */
+function applyStretch(root: THREE.Object3D, rig: Rig, time: number, weight: number): void {
+  const f = frameOf(root, rig);
+  const { swayHz, sway, lean } = BALANCE.avatar.emote.stretch;
+  turnBone(rig.chest, leanAxis(f), -lean * weight);
+  turnBone(rig.chest, f.forward, sway * wave(time, swayHz) * weight);
+  const sides = [
+    [rig.right, 1],
+    [rig.left, -1],
+  ] as const;
+  for (const [a, side] of sides) {
+    if (!a) continue;
+    aimBone(a.upper, a.lower, dir(f, 0.05, 1, side * 0.3), weight);
+    aimBone(a.lower, a.hand, dir(f, 0, 1, -side * 0.15), weight);
+    aimBone(a.hand, a.finger, dir(f, 0, 1, 0), weight);
+  }
+}
+
+export const EMOTE_OVERLAYS: Record<
+  OverlayEmote,
+  (root: THREE.Object3D, rig: Rig, time: number, weight: number) => void
+> = { think: applyThink, laugh: applyLaugh, stretch: applyStretch };
+
 /** Moves `weight` toward `target` at a rate that covers 0 to 1 in `seconds`. */
 export function approach(weight: number, target: number, dt: number, seconds: number): number {
   const step = seconds > 0 ? dt / seconds : 1;

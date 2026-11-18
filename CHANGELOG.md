@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Added
 
+- Emote menu and playback (T-1222, REQ-AVATAR-004): `apps/web/src/ui/EmoteMenu.tsx` (Emotes button and menu with the five protocol emotes, keyboard reachable, Escape closes, focus back to the game) sends the `emote` intent; `AvatarView.setEmote` plays `dance` (UAL1 `Dance_Loop`), `wave` (arm override) and `think` / `laugh` / `stretch` overlays (`BALANCE.avatar.emote`) on local and remote avatars from the replicated `emote`; dev hook `getEmote()` and `emote` in `getRemotes()`; component test `emoteMenu.test.tsx`, unit tests on both presets, two-page `e2e/emote.spec.ts`.
+
 - Typing while working (T-1219, REQ-AVATAR-002): a procedural forearm and hand overlay on the seated loop (`apps/web/src/game/avatar/overlays.ts`, `BALANCE.avatar.typing`) on local and remote avatars, blended over the 0.25 s activity cross-fade and derived from the replicated `activity`; sitting ↔ working keeps the seated loop's phase; dev hook `getTyping()` and `typing` in `getRemotes()`; unit tests on both presets and two-page `e2e/typing.spec.ts`.
 
 - Phase 4.1 2D UI restyle (T-1159): shared design tokens `apps/web/src/ui/tokens.css` (SPEC palette colours, spacing, radius, type scale, shadows) with typed references in `ui/tokens.ts` and base control styles in `ui/ui.css`; join screen, employee list, prompt, toast, connection banner, TV panel and key hint restyled from them, visible `:focus-visible` rings on every control, text contrast at least 4.5:1 checked in `test/uiTokens.test.ts` (values in `docs/plans/phase-4.1.md` §3.6). No behaviour, test id or accessible-name changes.
@@ -51,6 +53,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Changed
 
+- The G key sends the `wave` emote instead of the Phase 2 `wave` intent (T-1222); seated employees can wave; `e2e/seats.spec.ts` checks the replicated emote instead of the `waving` activity.
 - Docs for Phase 3 (T-1041): ARCHITECTURE §5 (server packages, name length 1 to 20, rate limits per SPEC, fixed-step input), DECISIONS (fixed-step model and owner-confirmed plan §6 defaults; network profile), CODEMAP, STATUS, README commands.
 - e2e walk spec: one join for the whole file, condition-based key holds (move a distance / until stopped) instead of fixed waits; README documents full and per-file e2e commands (T-1044).
 - Layout data moved to `packages/protocol/src/layout/office-layout.json`; OQ-001 closed at 10 x 8 x 2.7 m.

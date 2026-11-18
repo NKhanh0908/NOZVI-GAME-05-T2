@@ -1,9 +1,11 @@
 import {
+  canEmote,
   findInteractionTarget,
   isSeated,
   nextActivity,
   officeLayout,
   type Activity,
+  type EmoteId,
   type IntentMessage,
   type Interactable,
   type PlayerState,
@@ -104,10 +106,26 @@ export class InteractionController {
     this.hooks.onAction?.(t);
   }
 
-  /** G: asks to wave when the current activity allows it. */
+  /**
+   * G: the `wave` emote (T-1222 moved the key from the Phase 2 `wave` intent, DECISIONS
+   * 2026-11-17 T-1220).
+   */
   wave(): void {
-    const a = this.player.activity;
-    if (nextActivity(a, { type: 'wave' }) !== a) this.hooks.sendIntent({ type: 'wave' });
+    this.emote('wave');
+  }
+
+  /**
+   * REQ-AVATAR-004: asks for an emote when the current activity allows it (`canEmote`);
+   * returns whether the intent was sent. The server still decides (gap, timers).
+   */
+  emote(emote: EmoteId): boolean {
+    if (!this.canEmote(emote)) return false;
+    this.hooks.sendIntent({ type: 'emote', emote });
+    return true;
+  }
+
+  canEmote(emote: EmoteId): boolean {
+    return canEmote(this.player.activity, emote);
   }
 
   /**

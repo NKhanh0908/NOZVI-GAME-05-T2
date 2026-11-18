@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import {
   BALANCE,
   officeLayout,
+  toEmote,
   type Activity,
+  type EmoteId,
   type MoveInput,
   type PlayerState,
 } from '@office/protocol';
@@ -29,6 +31,10 @@ export class Player {
   activity: Activity = 'idle';
   /** The activity the server last reported for the local employee. */
   private serverActivity: Activity = 'idle';
+  /** The emote the server last reported ('' = none); shown only while it runs there. */
+  private serverEmote: EmoteId | '' = '';
+  /** The emote shown on the local avatar ('' = none). */
+  emote: EmoteId | '' = '';
   /** The seat the server last reported for the local employee ('' = none). */
   private seatId = '';
   private view: AvatarView | null = null;
@@ -68,6 +74,9 @@ export class Player {
       ? this.serverActivity
       : localActivity(this.serverActivity, moving);
     if (activity !== this.activity) this.setActivity(activity);
+    // Movement ends an emote on the server; like breaks, stop showing it at once.
+    this.emote = moving && !this.predictor.seated ? '' : this.serverEmote;
+    this.view?.setEmote(this.emote);
     this.view?.update(dt);
     this.sync();
   }
@@ -93,6 +102,7 @@ export class Player {
     }
     this.seatId = socket ? self.seatId : '';
     this.serverActivity = toActivity(self.activity);
+    this.serverEmote = toEmote(self.emote ?? '');
   }
 
   setView(view: AvatarView): void {
@@ -110,6 +120,7 @@ export class Player {
       m.opacity = this.opacity;
     }
     view.setActivity(this.activity);
+    view.setEmote(this.emote);
   }
 
   setActivity(a: Activity): void {

@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
-import { BALANCE, MSG, officeLayout, type AvatarId, type IntentMessage } from '@office/protocol';
+import {
+  BALANCE,
+  MSG,
+  officeLayout,
+  type AvatarId,
+  type EmoteId,
+  type IntentMessage,
+} from '@office/protocol';
 import { CameraRig } from './camera';
 import { fadeOpacity } from './cameraMath';
 import { KeyboardInput } from './input';
@@ -195,6 +202,7 @@ export class Game {
         },
         avatarOk: () => this.player.viewFinite(),
         getTyping: () => this.player.typing,
+        getEmote: () => this.player.emote,
         getRemotes: () => this.remotes.list(),
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
@@ -284,9 +292,23 @@ export class Game {
     this.tvLayer.container.style.pointerEvents = open ? 'auto' : 'none';
     this.renderer.domElement.style.pointerEvents = open ? 'none' : '';
     if (open) return;
+    this.focusGame();
+  }
+
+  /** Gives keyboard focus back to the game canvas (TV Close, emote menu closed). */
+  focusGame(): void {
     const active = document.activeElement;
     if (active instanceof HTMLElement && active !== document.body) active.blur();
     this.renderer.domElement.focus({ preventScroll: true });
+  }
+
+  /** REQ-AVATAR-004 (T-1222): the emote menu's request; the server decides. */
+  emote(emote: EmoteId): boolean {
+    return this.controller.emote(emote);
+  }
+
+  canEmote(emote: EmoteId): boolean {
+    return this.controller.canEmote(emote);
   }
 
   /** Renders two frames: one with the shadow pass, one reusing the shadow map (main pass only). */

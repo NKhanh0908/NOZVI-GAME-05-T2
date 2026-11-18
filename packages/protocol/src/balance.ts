@@ -26,6 +26,12 @@ export const BALANCE = {
   avatar: {
     /** REQ-AVATAR-002 typing while `working` (T-1219): alternating taps, Hz per hand. */
     typing: { tapHz: 3.5, tapDepth: 0.35, reach: 0.6, elbowOut: 0.18, handsIn: 0.32 },
+    /** REQ-AVATAR-004 emote overlays (T-1222); angles in radians, rates in Hz. */
+    emote: {
+      think: { headNod: 0.3 },
+      laugh: { hz: 4, chest: 0.12, head: 0.2 },
+      stretch: { swayHz: 0.5, sway: 0.1, lean: 0.15 },
+    },
   },
   movement: { walkSpeed: 2.0, runSpeed: 4.0, capsuleRadius: 0.3, turnRate: 12 },
   camera: {

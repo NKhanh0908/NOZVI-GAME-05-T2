@@ -46,8 +46,10 @@ test('a working employee types on their own page and on another page', async ({
   browser,
 }, testInfo) => {
   test.setTimeout(150_000);
-  const ana = await joinAs(browser, 'Ana', 'TYPING-E2E');
-  const ben = await joinAs(browser, 'Ben', 'TYPING-E2E');
+  // A fresh code per run: a previous run's employees may still hold a 20 s reservation.
+  const code = `TY-${Date.now().toString(36).slice(-6)}`;
+  const ana = await joinAs(browser, 'Ana', code);
+  const ben = await joinAs(browser, 'Ben', code);
   await expect
     .poll(async () => (await remote(ben, 'Ana'))?.model, { timeout: 30_000 })
     .toBe('avatar');

@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { BALANCE, isAvatarId, type Activity, type AvatarId } from '@office/protocol';
+import {
+  BALANCE,
+  isAvatarId,
+  toEmote,
+  type Activity,
+  type AvatarId,
+  type EmoteId,
+} from '@office/protocol';
 import {
   InterpolationBuffer,
   renderTime,
@@ -15,6 +22,8 @@ import { presenceLabel } from '../hud/activityLabel';
 export type RemoteView = {
   readonly root: THREE.Object3D;
   setActivity(activity: Activity): void;
+  /** Optional so test fakes stay small; `AvatarView` implements it (T-1222). */
+  setEmote?(emote: EmoteId | ''): void;
   update(dt: number): void;
   dispose(): void;
   /** Typing overlay weight, 0 to 1 (T-1219). */
@@ -49,6 +58,8 @@ export type RemoteInfo = {
   status: string;
   /** Typing overlay weight as drawn, 0 to 1 (T-1219). */
   typing: number;
+  /** Emote as drawn ('' = none; T-1222). */
+  emote: EmoteId | '';
 };
 
 type Remote = {
@@ -59,6 +70,7 @@ type Remote = {
   readonly nameplate: RemoteNameplate;
   readonly unsubscribe: () => void;
   activity: Activity;
+  emote: EmoteId | '';
   status: string;
   /** The seat seen in the last snapshot; a change restarts interpolation. */
   seatId: string;
@@ -176,6 +188,7 @@ export class RemoteAvatars {
       nameplate,
       unsubscribe: this.source.onChange(employee, snapshot),
       activity: toActivity(employee.activity),
+      emote: toEmote(employee.emote ?? ''),
       status: '',
       seatId,
       view: null,
@@ -195,6 +208,7 @@ export class RemoteAvatars {
         remote.view = view;
         group.add(view.root);
         view.setActivity(remote.activity);
+        view.setEmote?.(remote.emote);
       })
       .catch((error: unknown) =>
         console.warn(`Remote avatar ${employee.avatarId} failed; keeping capsule.`, error),
@@ -224,7 +238,9 @@ export class RemoteAvatars {
       remote.group.rotation.y = pose.heading;
     }
     remote.activity = toActivity(remote.employee.activity);
+    remote.emote = toEmote(remote.employee.emote ?? '');
     remote.view?.setActivity(remote.activity);
+    remote.view?.setEmote?.(remote.emote);
     remote.view?.update(dt);
     const reconnecting = remote.employee.connected === false;
     remote.status = presenceLabel(remote.activity, remote.employee.connected);
@@ -250,6 +266,7 @@ export class RemoteAvatars {
       connected: r.employee.connected !== false,
       status: r.status,
       typing: r.view?.typing ?? 0,
+      emote: r.emote,
     }));
   }
 

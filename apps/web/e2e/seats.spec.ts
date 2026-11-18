@@ -19,12 +19,14 @@ type Remote = {
   z: number;
   heading: number;
   activity: string;
+  emote: string;
   seatId: string;
   model: 'avatar' | 'capsule';
 };
 type Office = {
   getRemotes(): Remote[];
   getActivity(): string;
+  getEmote(): string;
 };
 type Trace = [string, number][];
 type Win = { __office: Office; __trace?: Trace; __stopTrace?: boolean };
@@ -54,22 +56,28 @@ const prompt = (page: Page) => page.getByTestId('prompt').first();
  * Records every change of an activity on each animation frame with `Date.now()`: the local
  * activity when `name` is null, otherwise the remote avatar called `name`.
  */
-async function startTrace(page: Page, name: string | null) {
-  await page.evaluate((n) => {
-    const w = window as unknown as Win;
-    const trace: Trace = [];
-    w.__trace = trace;
-    w.__stopTrace = false;
-    const tick = () => {
-      const a =
-        n === null
-          ? w.__office.getActivity()
-          : (w.__office.getRemotes().find((r) => r.name === n)?.activity ?? 'gone');
-      if (trace.at(-1)?.[0] !== a) trace.push([a, Date.now()]);
-      if (!w.__stopTrace) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, name);
+async function startTrace(
+  page: Page,
+  name: string | null,
+  field: 'activity' | 'emote' = 'activity',
+) {
+  await page.evaluate(
+    ([n, f]) => {
+      const w = window as unknown as Win;
+      const trace: Trace = [];
+      w.__trace = trace;
+      w.__stopTrace = false;
+      const tick = () => {
+        const local = f === 'emote' ? w.__office.getEmote() : w.__office.getActivity();
+        const a =
+          n === null ? local : (w.__office.getRemotes().find((r) => r.name === n)?.[f] ?? 'gone');
+        if (trace.at(-1)?.[0] !== a) trace.push([a, Date.now()]);
+        if (!w.__stopTrace) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    [name, field] as const,
+  );
 }
 
 async function stopTrace(page: Page): Promise<Trace> {
@@ -200,14 +208,20 @@ test('coffee break, wave and sofa rest are seen remotely and end together', asyn
   const drinkB = endOf(await stopTrace(ben), 'drinking');
   expect(Math.abs(drinkA - drinkB)).toBeLessThan(500);
 
-  await startTrace(ana, null);
-  await startTrace(ben, 'Ana');
+  // G sends the `wave` emote (T-1222): a layer over the activity, which stays idle.
+  await startTrace(ana, null, 'emote');
+  await startTrace(ben, 'Ana', 'emote');
   await ana.keyboard.press('g');
-  await expect.poll(async () => (await remote(ben, 'Ana'))?.activity).toBe('waving');
-  await expect.poll(() => activity(ana), { timeout: 10_000 }).toBe('idle');
-  await expect.poll(async () => (await remote(ben, 'Ana'))?.activity).toBe('idle');
-  const waveA = endOf(await stopTrace(ana), 'waving');
-  const waveB = endOf(await stopTrace(ben), 'waving');
+  await expect.poll(async () => (await remote(ben, 'Ana'))?.emote).toBe('wave');
+  expect((await remote(ben, 'Ana'))?.activity).toBe('idle');
+  await expect
+    .poll(() => ana.evaluate(() => (window as unknown as Win).__office.getEmote()), {
+      timeout: 10_000,
+    })
+    .toBe('');
+  await expect.poll(async () => (await remote(ben, 'Ana'))?.emote).toBe('');
+  const waveA = endOf(await stopTrace(ana), 'wave');
+  const waveB = endOf(await stopTrace(ben), 'wave');
   expect(Math.abs(waveA - waveB)).toBeLessThan(500);
 
   await walkTo(ana, COFFEE_TO_SOFA);
