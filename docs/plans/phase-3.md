@@ -154,6 +154,6 @@ Observed result: **jumps seen**. Remote movement is continuous for 99.4% of fram
 **Open gaps (owner only)**
 
 1. FPS and draw calls on a normal desktop with ten employees (REQ-PERF-001); the numbers above are SwiftShader only.
-2. Draw-call budget decision: ten employees measure 352 to 368 calls (about 160 to 175 main pass) and about 146k triangles, against the 45-call and 120k-triangle targets. Still open since T-1038.
+2. ~~Draw-call budget decision~~ Closed 2026-11-18 (T-1161, T-1162, DECISIONS): 2 calls per remote avatar; ten employees 105 calls and 90.0k triangles (was 352 to 368 calls and about 146k triangles).
 3. LAN playtest with real browsers on several machines, including a visual judgement of remote smoothness under the network profile.
 4. One foreground Playwright run by the owner.
