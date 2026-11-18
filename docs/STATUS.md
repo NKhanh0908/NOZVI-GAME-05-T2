@@ -1,6 +1,6 @@
 # STATUS — project memory
 
-Updated: 2026-11-18 by Claude Code · Phase: Phase 4.1 (FEAT-68) wave 1 merged into `dev` (PR #3, 2026-11-18, owner: merge first, test later); 9 FEAT-68 tasks open; Phase 4 follow-ups open
+Updated: 2026-11-18 by Claude Code · Phase: Phase 4.1 (FEAT-68) wave 2 merged into `dev` (PR #4, 2026-11-18); open: T-1154, T-1155, T-1156, T-1160; T-1150 waits for the owner's FPS reading
 Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/SPEC.md` (implementation spec). `docs/GDD.md` is deprecated (casual template).
 
 ## Done
@@ -36,6 +36,7 @@ Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTU
 - OQ-025: no confirmed embed-blocked video id, so the live TV error check is open (simulated codes are tested); oEmbed 401 identifies embed-blocked ids.
 - TV known limits: a controller leaving before the end of a video means no client reports the end; a same-handle SDK reconnect can give one late clock sample.
 - e2e flakes seen 2026-11-17 in non-TV specs (`reconnect.spec.ts`, `remote.spec.ts` walk test): pass on rerun; details in phase-4 plan §10.
+- PR #4 merged 2026-11-18 (CI check + full e2e green on 5535db9): T-1152 desk props, T-1151 shell details, T-1150 lighting, T-1158 decor and wall clock, T-1149 materials plus tiled floor / wainscot / accent wall, T-1376 and T-1405 TV fixes, wave and monitor orientation fixes. Shadow maps are drawn in `high` quality only (e2e SwiftShader FPS had fallen to 2.7 with three employees). Owner checks: FPS with ten employees in high quality, overall look.
 - Production deploy is not configured: `deploy.yml` runs CI, then the `server` job stops at "Check configuration" because `RENDER_DEPLOY_HOOK_URL` / `SERVER_URL` are not set (runs #7 and #8 on 2026-11-18), so nothing reaches Render or Vercel yet. Setup steps: `docs/DEPLOY.md` (Phase 5).
 - Hosting accounts (Render, Vercel) needed only at Phase 5.
 
