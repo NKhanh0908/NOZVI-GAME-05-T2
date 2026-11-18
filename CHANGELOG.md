@@ -72,6 +72,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Fixed
 
+- Desk screens, keyboards and mice faced away from the chair (owner report 2026-11-18): Kenney models face +Z at rotY 0 while the layout gives these components the seat's rotY; they now face the seat (seat rotY + 180°). Unit test checks every desk.
+
 - TV error text for IFrame error 2 (T-1405): it said "The video id is not valid" although pasted ids are validated first; owner logs show YouTube refusing one specific video 0.1 s after cue while every other pasted link plays, so it now says YouTube refused to play the video outside youtube.com.
 
 - Wave and the G-key wave raised the right arm across the head (owner report 2026-11-18): the arm direction used a fixed local +X, which is the character's left; it now uses the skeleton-derived right side (`frameOf`), with the elbow opening outward. Regression test in `avatarClips.test.ts` for wave and stretch on both avatars.

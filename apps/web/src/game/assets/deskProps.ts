@@ -58,16 +58,30 @@ function modelFor(type: DeskPropType, index: number, rotY: number): { file: stri
 }
 
 /**
+ * Owner report 2026-11-18: the screen faced away from the chair. Kenney models face +Z at
+ * rotY 0 (the chairs prove it: seat rotY 90 faces +X, toward the desk), but the layout's
+ * component rotY for the screen equals the seat's. Screen, keyboard and mouse therefore face
+ * the seat: seat rotY + 180°.
+ */
+const FACES_SEAT: ReadonlySet<DeskPropType> = new Set(['computer', 'keyboard', 'mouse']);
+
+/**
  * T-1152: every desk prop listed under a desk's `components` in the layout, resolved to a
  * model and a fitted box. Deterministic: the same layout always gives the same props. Props
  * have no palette box in the room, so their placements are `standalone`.
  */
 export function deskProps(layout: OfficeLayout): DeskProp[] {
   const desks = layout.items.filter((item) => item.type === 'desk');
+  const seatRotY = new Map(layout.workstations.map((ws) => [`${ws.id}_desk`, ws.seat.rotY]));
   return desks.flatMap((desk, deskIndex) =>
     (desk.components ?? []).flatMap((component: LayoutBox) => {
       if (!isPropType(component.type)) return [];
-      const model = modelFor(component.type, deskIndex, component.rotY ?? 0);
+      const seat = seatRotY.get(desk.id);
+      const rotY =
+        FACES_SEAT.has(component.type) && seat !== undefined
+          ? (seat + 180) % 360
+          : (component.rotY ?? 0);
+      const model = modelFor(component.type, deskIndex, rotY);
       return [
         {
           deskId: desk.id,

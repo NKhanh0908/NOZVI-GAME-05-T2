@@ -73,3 +73,19 @@ it('T-1152: standalone props load without a palette box and repeats share one me
   handle.dispose();
   expect(room.children).toHaveLength(0);
 });
+
+it('owner report 2026-11-18: screen, keyboard and mouse face the chair of their desk', () => {
+  for (const ws of officeLayout.workstations) {
+    const own = deskProps(officeLayout).filter((p) => p.deskId === `${ws.id}_desk`);
+    for (const p of own.filter((q) => ['computer', 'keyboard', 'mouse'].includes(q.type))) {
+      // Kenney models face +Z at rotY 0; rotate that front and compare with the way to the seat.
+      const a = (p.placement.rotY * Math.PI) / 180;
+      const front = { x: Math.sin(a), z: Math.cos(a) };
+      const toSeat = {
+        x: ws.seat.position[0] - p.placement.box.position[0],
+        z: ws.seat.position[2] - p.placement.box.position[2],
+      };
+      expect(front.x * toSeat.x + front.z * toSeat.z, `${p.placement.box.id}`).toBeGreaterThan(0);
+    }
+  }
+});
