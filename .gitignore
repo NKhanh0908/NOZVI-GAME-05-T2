@@ -8,3 +8,6 @@ coverage/
 dist-types/
 test-results/
 visual-out/
+
+# Raw asset-pack downloads (Kenney zips): the used models live in apps/web/public/assets.
+kenney/

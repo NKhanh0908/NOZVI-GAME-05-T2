@@ -68,6 +68,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Fixed
 
+- Wave and the G-key wave raised the right arm across the head (owner report 2026-11-18): the arm direction used a fixed local +X, which is the character's left; it now uses the skeleton-derived right side (`frameOf`), with the elbow opening outward. Regression test in `avatarClips.test.ts` for wave and stretch on both avatars.
+
 - TV stuck `playing` after the controller left (T-1376, OQ-022): while `controllerSessionId` is null, any client whose player reaches the video end reports it as a `pause` (also a client already holding the end when the controller leaves); `TvSim` ignores a `pause` on a paused TV, so duplicate reports keep the first end stamp. Late joiners are no longer seeked past the end. Unit tests in `apps/web/test/tv/tvBinding.test.ts` and `apps/server/test/tv.test.ts`.
 
 - TV IFrame error 5 on a pasted video (T-1405, owner confirmation pending): the YouTube adapter sends only cue, play, pause, stop and mute until the cued video has started; seeks made before that only move the start position (latest wins, applied once), rate changes are held, seeks are clamped to `[0, duration - 0.5 s]` and non-finite values dropped, rates the video does not list in `getAvailablePlaybackRates()` are refused, and `origin` / `enablejsapi` are passed. `TvBinding` runs the drift sync only while the player reports `isReady()`, does not seek right after loading a new video, and turns an unsupported nudge rate into a seek (seek-only fallback, T-1374). DEV-only TV debug log (`apps/web/src/tv/tvDebugLog.ts`): every adapter call, IFrame call, state change, error code, available rates and duration go to `window.__tvLog` and `console.debug('[tv]', …)`.
@@ -77,6 +79,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 - Five defects in the Phase 1 plan's collision/movement code (corner test geometry, unbounded loop on huge deltas, residual furniture overlap, seam drift, non-finite input); camera no longer shows the outside of the room when the player is against a wall.
 
 ### Removed
+
+- Raw Kenney asset zips (`kenney/*.zip`, about 9.7 MB) are no longer tracked; `kenney/` is gitignored. The models in use are in `apps/web/public/assets/` with credits.
 
 ## [0.0.1] - 2026-11-09
 
