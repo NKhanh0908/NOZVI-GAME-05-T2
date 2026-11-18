@@ -15,6 +15,13 @@ import type { LayoutBox, OfficeLayout } from '@office/protocol';
 /** Frame bar width and depth, mullion spacing (m). */
 const FRAME = { bar: 0.06, depth: 0.05, mullionSpacing: 1.45 };
 const SKIRTING = { height: 0.08, depth: 0.015 };
+/**
+ * Owner request 2026-11-18 (more wall detail): a painted lower band (wainscot) with a chair
+ * rail on every wall except the window wall, and an accent colour on the TV wall above it.
+ */
+const WAINSCOT = { height: 0.95, depth: 0.008, rail: 0.04, railDepth: 0.02 };
+/** The wall the TV hangs on gets the accent colour (layout item type `TV`). */
+const ACCENT_ITEM_TYPE = 'TV';
 /** Ceiling panel size (m) and seam width; 0.6 m matches the floor tiles. */
 const CEILING = { panel: 0.6, seam: 0.012 };
 
@@ -23,6 +30,9 @@ const COLORS = {
   glass: '#BFD9EA',
   skirting: '#D9D6CF',
   seam: '#E4E6EA',
+  wainscot: '#E6E1D8',
+  rail: '#FFFFFF',
+  accent: '#CFDCD8',
   acBody: '#F0F2F4',
   acVent: '#AEB4BA',
   sign: '#2B2F33',
@@ -73,6 +83,50 @@ export function skirtingGeometry(layout: OfficeLayout): THREE.BufferGeometry[] {
       ? box([wall.size[0], SKIRTING.height, SKIRTING.depth], [wall.position[0], y, face])
       : box([SKIRTING.depth, SKIRTING.height, wall.size[2]], [face, y, wall.position[2]]);
   });
+}
+
+/** Walls that carry a window (the wainscot and accent skip them). */
+function windowWalls(layout: OfficeLayout): Set<string> {
+  return new Set(layout.windows.map((w) => w.wall));
+}
+
+/** A thin slab on a wall's inner face from `y0` to `y1`, `depth` thick, offset `off`. */
+function faceSlab(wall: LayoutBox, y0: number, y1: number, depth: number, off = 0) {
+  const { axis, sign } = inward(wall);
+  const face = innerFace(wall) + sign * (off + depth / 2);
+  const h = y1 - y0;
+  const y = y0 + h / 2;
+  return axis === 'z'
+    ? box([wall.size[0], h, depth], [wall.position[0], y, face])
+    : box([depth, h, wall.size[2]], [face, y, wall.position[2]]);
+}
+
+/** Wainscot panels and chair rails on every wall without a window. */
+export function wainscotGeometry(layout: OfficeLayout): {
+  panels: THREE.BufferGeometry[];
+  rails: THREE.BufferGeometry[];
+} {
+  const skip = windowWalls(layout);
+  const walls = layout.walls.filter((w) => !skip.has(w.id));
+  const { height, depth, rail, railDepth } = WAINSCOT;
+  return {
+    panels: walls.map((w) => faceSlab(w, SKIRTING.height, height, depth)),
+    rails: walls.map((w) => faceSlab(w, height - rail / 2, height + rail / 2, railDepth)),
+  };
+}
+
+/** The accent panel above the wainscot on the wall behind the TV, or nothing. */
+export function accentGeometry(layout: OfficeLayout): THREE.BufferGeometry[] {
+  const tv = layout.items.find((i) => i.type === ACCENT_ITEM_TYPE);
+  if (!tv) return [];
+  const wall = layout.walls
+    .filter((w) => inward(w).axis === (tv.size[0] < tv.size[2] ? 'x' : 'z'))
+    .sort((a, b) => {
+      const i = tv.size[0] < tv.size[2] ? 0 : 2;
+      return Math.abs(a.position[i] - tv.position[i]) - Math.abs(b.position[i] - tv.position[i]);
+    })[0];
+  if (!wall) return [];
+  return [faceSlab(wall, WAINSCOT.height + WAINSCOT.rail / 2, layout.room.height, 0.004)];
 }
 
 /** Frame bars (outer border plus vertical mullions) and one glass pane per window. */
@@ -222,8 +276,24 @@ export function buildShellDetails(layout: OfficeLayout): THREE.Object3D[] {
     new THREE.MeshStandardMaterial({ color: layout.palette.walls ?? '#F5F6F8' }),
   );
   if (headers) headers.castShadow = false;
+  const wainscot = wainscotGeometry(layout);
   const meshes = [
     headers,
+    merged(
+      'shell:wainscot',
+      wainscot.panels,
+      new THREE.MeshStandardMaterial({ color: COLORS.wainscot, roughness: 0.85 }),
+    ),
+    merged(
+      'shell:chair-rail',
+      wainscot.rails,
+      new THREE.MeshStandardMaterial({ color: COLORS.rail, roughness: 0.5 }),
+    ),
+    merged(
+      'shell:accent-wall',
+      accentGeometry(layout),
+      new THREE.MeshStandardMaterial({ color: COLORS.accent, roughness: 0.9 }),
+    ),
     merged(
       'shell:window-frames',
       windows.frame,

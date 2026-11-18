@@ -5,7 +5,9 @@ import { buildRoom } from '../src/game/room';
 import {
   airConditioner,
   buildShellDetails,
+  accentGeometry,
   ceilingGeometry,
+  wainscotGeometry,
   doorHeaderGeometry,
   skirtingGeometry,
   windowGeometry,
@@ -19,10 +21,13 @@ const bounds = (g: THREE.BufferGeometry) => {
 it('T-1151: window frames, glass, skirting, ceiling panels and sign are one merged mesh each', () => {
   const details = buildShellDetails(officeLayout);
   expect(details.map((d) => d.name).sort()).toEqual([
+    'shell:accent-wall',
     'shell:ceiling-panels',
+    'shell:chair-rail',
     'shell:door-headers',
     'shell:sign',
     'shell:skirting',
+    'shell:wainscot',
     'shell:window-frames',
     'shell:window-glass',
   ]);
@@ -84,4 +89,27 @@ it('T-1151: wall pieces close the gap between each door top and the ceiling', ()
     g.computeBoundingBox();
     expect(g.boundingBox!.max.y).toBeCloseTo(officeLayout.room.height);
   }
+});
+
+it('owner request 2026-11-18: wainscot and chair rail on every wall but the window wall', () => {
+  const { panels, rails } = wainscotGeometry(officeLayout);
+  const expected =
+    officeLayout.walls.length - new Set(officeLayout.windows.map((w) => w.wall)).size;
+  expect(panels).toHaveLength(expected);
+  expect(rails).toHaveLength(expected);
+  for (const g of panels) {
+    g.computeBoundingBox();
+    expect(g.boundingBox!.max.y).toBeCloseTo(0.95);
+  }
+});
+
+it('owner request 2026-11-18: the accent colour is on the TV wall above the rail', () => {
+  const [accent] = accentGeometry(officeLayout);
+  accent!.computeBoundingBox();
+  const b = accent!.boundingBox!;
+  const tv = officeLayout.items.find((i) => i.type === 'TV')!;
+  // The TV hangs on the west wall (x about -5.9): the accent panel lies on its inner face.
+  expect(Math.abs(b.min.x - tv.position[0])).toBeLessThan(0.15);
+  expect(b.min.y).toBeGreaterThan(0.9);
+  expect(b.max.y).toBeCloseTo(officeLayout.room.height);
 });
