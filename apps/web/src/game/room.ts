@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { LayoutBox, OfficeLayout } from '@office/protocol';
+import { airConditioner, buildShellDetails } from './roomDetails';
 
 const TYPE_COLORS: Record<string, string> = {
   main_door: 'mainDoor',
@@ -61,6 +62,14 @@ export function buildRoom(layout: OfficeLayout): THREE.Group {
     mesh.castShadow = false;
     group.add(mesh);
   }
-  for (const item of layout.items) group.add(boxMesh(item, colorFor(item, layout.palette)));
+  for (const item of layout.items) {
+    // T-1151: the air conditioner is procedural; doors swap to models in loadFurniture.
+    group.add(
+      item.type === 'air_conditioner'
+        ? airConditioner(item)
+        : boxMesh(item, colorFor(item, layout.palette)),
+    );
+  }
+  group.add(...buildShellDetails(layout));
   return group;
 }

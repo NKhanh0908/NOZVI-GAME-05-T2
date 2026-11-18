@@ -40,7 +40,11 @@ export type OfficeLayout = {
   sofaSeats: SeatSocket[];
   colliders: Collider[];
   spawn: { zone: string; position: Vec3; rotY: number };
+  /** Shell windows, drawn as frames and glass (T-1151); collision uses the walls only. */
+  windows: LayoutWindow[];
 };
+
+export type LayoutWindow = { id: string; wall: string; position: Vec3; size: Vec3 };
 
 function fail(msg: string): never {
   throw new Error(`Invalid layout: ${msg}`);
@@ -101,6 +105,15 @@ export function parseLayout(input: unknown): OfficeLayout {
     zones: input.zones as OfficeLayout['zones'],
     walls: input.walls as LayoutBox[],
     items: input.items as LayoutBox[],
+    windows: (isRecord(input.shell) && Array.isArray(input.shell.windows)
+      ? (input.shell.windows as Record<string, unknown>[])
+      : []
+    ).map((w) => ({
+      id: w.id as string,
+      wall: w.wall as string,
+      position: w.position as Vec3,
+      size: w.size as Vec3,
+    })),
     workstations,
     interactables,
     sofaSeats,

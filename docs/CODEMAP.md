@@ -40,6 +40,8 @@ Phase 4.1 UI tokens (T-1159): `apps/web/src/ui/tokens.css` is the only place col
 
 Phase 4.1 avatar overlays (T-1219): `apps/web/src/game/avatar/overlays.ts` holds procedural bone overlays applied by `AvatarView.update` after the mixer (`findRig`, `aimBone`, `applyTyping` while `working`; tunables `BALANCE.avatar`). Tests: `apps/web/test/avatarClips.test.ts`, e2e `typing.spec.ts`.
 
+Room shell details (T-1151): `apps/web/src/game/roomDetails.ts` (window frames + glass, skirting, ceiling seams, sign, door headers, procedural air conditioner), called from `room.ts` `buildRoom`; door models via `FURNITURE` in `furnitureManifest.ts`; shell windows parsed into `OfficeLayout.windows` (`packages/protocol` layout). Tests: `apps/web/test/roomDetails.test.ts`, `room.test.ts`.
+
 Desk props (T-1152): `apps/web/src/game/assets/deskProps.ts` resolves each desk's six layout components to Kenney models (`furnitureManifest.ts` `DESK_SCREEN`, `FURNITURE_PROPS`); `Game.ts` passes them to `loadFurniture` as `standalone` placements; dev hook `getDeskProps`. Tests: `apps/web/test/deskProps.test.ts`, e2e `deskProps.spec.ts`.
 
 Avatar render cost (T-1161): `apps/web/src/game/avatar/mergeSkinned.ts` merges an avatar GLB's skinned parts into one vertex-coloured skinned mesh (called from `AvatarView` `loadTemplate`); `RemoteAvatars.createBlobShadow` draws the shared blob shadow and remote avatars cast no real shadow. Tests: `apps/web/test/mergeSkinned.test.ts`, `remoteAvatars.test.ts`; numbers from e2e `renderBaseline.spec.ts`.

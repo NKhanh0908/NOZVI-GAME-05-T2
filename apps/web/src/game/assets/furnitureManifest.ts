@@ -13,8 +13,11 @@ export const FURNITURE: Record<string, string> = {
   coffee_table: 'tableCoffee.glb',
   TV: 'televisionModern.glb',
   decorative_lighting: 'lampSquareFloor.glb',
+  // T-1151: both doors use the Kenney doorway with door, fitted to the layout box.
+  main_door: 'doorwayFront.glb',
+  utility_door: 'doorwayFront.glb',
 };
-// Not listed (kept as palette boxes): main_door, utility_door, air_conditioner.
+// The air conditioner is procedural (`roomDetails.ts`, owner decision 2026-11-17).
 export const DESK_SCREEN = 'computerScreen.glb';
 export const COFFEE_MACHINE = 'kitchenCoffeeMachine.glb';
 
