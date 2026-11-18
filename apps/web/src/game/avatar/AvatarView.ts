@@ -8,7 +8,9 @@ import {
   EMOTE_OVERLAYS,
   applyTyping,
   approach,
+  dir,
   findRig,
+  frameOf,
   type OverlayEmote,
   type Rig,
 } from './overlays';
@@ -247,13 +249,13 @@ export class AvatarView {
       const hand = fore?.children.find((b) => b.name === 'HandR');
       const t = performance.now() / 1000;
       if (arm && fore && hand) {
-        this.root.updateWorldMatrix(true, true);
-        const heading = this.root.getWorldQuaternion(new THREE.Quaternion());
-        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(heading);
-        const raised = new THREE.Vector3(0.35, 0.9, 0).normalize().applyQuaternion(heading);
+        // The avatar's right comes from the skeleton (`frameOf`): the old local +X pointed to
+        // the character's left, so the right arm crossed over the head.
+        const f = frameOf(this.root, this.rig);
+        const raised = dir(f, 0, 0.6, 0.8);
         this.pointBone(arm, fore, raised);
-        this.pointBone(fore, hand, up);
-        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(heading);
+        this.pointBone(fore, hand, dir(f, 0, 1, 0.1));
+        const forward = f.forward.clone();
         const inverseParent = fore.parent!.getWorldQuaternion(new THREE.Quaternion()).invert();
         forward.applyQuaternion(inverseParent);
         fore.quaternion.premultiply(

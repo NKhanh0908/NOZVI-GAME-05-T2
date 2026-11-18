@@ -121,9 +121,75 @@ export const BALANCE = {
     /** Intensity of the light probe baked from THREE RoomEnvironment (image-based fill). */
     environmentIntensity: 0.55,
     hemisphere: { sky: '#f2f0ec', ground: '#e6e0d6', intensity: 0.8 },
-    /** Daylight through the south window (layout shell.windows[south_window]). */
-    sun: { color: '#fff1dc', intensity: 3.0, position: [2, 6, 9], target: [0, 0, 0] },
-    shadow: { mapSize: 2048, bias: -0.0004, normalBias: 0.03, radius: 3, margin: 0.3 },
+    /**
+     * Daylight through the south window (layout shell.windows[south_window], top edge 2.55 m
+     * at z 4.75). T-1150: a lower, warmer sun (about 26 degrees up) so the light falls through
+     * the window wall across the desk pods instead of straight down through the ceiling.
+     */
+    sun: { color: '#fff0d8', intensity: 3.2, position: [1.5, 4.2, 9.5], target: [0, 0, 1] },
+    /**
+     * T-1150: softer contact shadows: a wider PCF filter radius and shadows that keep some
+     * bounce light (intensity < 1) instead of going fully dark.
+     */
+    shadow: {
+      mapSize: 2048,
+      bias: -0.0004,
+      normalBias: 0.03,
+      radius: 6,
+      intensity: 0.8,
+      margin: 0.3,
+    },
+    /**
+     * T-1150: flush LED ceiling panels (layout shell.lighting[ceiling_light], room centre).
+     * Emissive only: they add no light and cast no shadow. A grid of `columns` x `rows`
+     * panels, `spacing` metres apart (x, z), centred under the ceiling.
+     */
+    ceilingFixtures: {
+      columns: 4,
+      rows: 3,
+      spacing: [2.4, 2.4],
+      panelSize: 0.6,
+      thickness: 0.03,
+      color: '#e5e7eb',
+      emissive: '#fff8ee',
+      /** Linear HDR; above postProcessing.bloom.threshold so panels glow in `high`. */
+      emissiveIntensity: 6,
+    },
+    /**
+     * T-1150, `high` render quality only (off in `e2e`): MSAA in the composer targets and a
+     * mild bloom. The threshold is in linear HDR before tone mapping, above sunlit walls, so
+     * only emissive panels, screens and lamps bloom. Drop bloom (strength 0) if it costs
+     * more than 5 FPS on the owner's laptop (plan §6.5).
+     */
+    postProcessing: {
+      msaaSamples: 4,
+      bloom: { strength: 0.25, radius: 0.4, threshold: 4 },
+    },
+    /**
+     * T-1149, `high` render quality only: `scene.environment` is a PMREM of THREE
+     * RoomEnvironment (soft reflections on glass, metal and screens) at
+     * `environmentIntensity`, in place of the light probe. `e2e` keeps the light probe.
+     * `blurSigma` is the PMREMGenerator.fromScene blur (radians).
+     */
+    reflections: { blurSigma: 0.04 },
+    /**
+     * T-1149: one material table per material class, applied to the loaded Kenney
+     * furniture, prop and decor materials (`apps/web/src/game/materials.ts` maps Kenney
+     * material names to a class). `palette` names an `officeLayout.palette` entry whose
+     * colour the class takes (REQ-ROOM-001: walnut wood, white metal); classes without one
+     * keep the Kenney colour.
+     */
+    materials: {
+      // No `palette` colour: recolouring by Kenney material name also tinted the bear, the
+      // cardboard box, plant pots and lamp stands; Kenney colours stay (lead, 2026-11-18).
+      wood: { roughness: 0.7, metalness: 0 },
+      metal: { roughness: 0.4, metalness: 0.4 },
+      fabric: { roughness: 0.95, metalness: 0 },
+      glass: { roughness: 0.05, metalness: 0 },
+      /** Plastic housings and screens (black electronics). */
+      plastic: { roughness: 0.3, metalness: 0 },
+      default: { roughness: 0.8, metalness: 0 },
+    },
   },
 } as const;
 export type Balance = typeof BALANCE;

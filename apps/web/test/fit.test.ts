@@ -56,7 +56,7 @@ it('shares cached loads, uses item rotation, and keeps boxes for failed or unmap
       { id: 'desk_a', type: 'desk', position: [0, 1, 0], size: [2, 2, 1], rotY: 90 },
       { id: 'desk_b', type: 'desk', position: [3, 1, 0], size: [2, 2, 1] },
       { id: 'fridge', type: 'fridge', position: [0, 1, 3], size: [1, 2, 1] },
-      { id: 'door', type: 'main_door', position: [3, 1, 3], size: [1, 2, 1] },
+      { id: 'door', type: 'breaker_box', position: [3, 1, 3], size: [1, 2, 1] },
     ].map((item) => ({
       ...item,
       position: item.position as [number, number, number],

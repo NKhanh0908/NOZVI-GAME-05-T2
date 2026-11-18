@@ -91,6 +91,8 @@ function frameLoop() {
     nameplate: { set() {} },
     remotes: { update() {} },
     renderer: { setAnimationLoop: (callback: () => void) => (frame = callback), render() {} },
+    frame: { render() {} },
+    clock: { update() {} },
     labelRenderer: { render() {} },
     tvLayer: { render() {} },
     tvMode: { isOpen: false },

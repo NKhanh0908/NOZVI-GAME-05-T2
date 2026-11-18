@@ -5,9 +5,11 @@ import { buildRoom } from '../src/game/room';
 
 describe('buildRoom', () => {
   const room = buildRoom(officeLayout);
-  it('creates one mesh per wall and item', () => {
+  it('creates one object per wall and item (a mesh, or the procedural AC group, T-1151)', () => {
     for (const box of [...officeLayout.walls, ...officeLayout.items]) {
-      expect(room.getObjectByName(box.id)).toBeInstanceOf(THREE.Mesh);
+      const object = room.getObjectByName(box.id);
+      if (box.type === 'air_conditioner') expect(object).toBeInstanceOf(THREE.Group);
+      else expect(object).toBeInstanceOf(THREE.Mesh);
     }
   });
   it('sizes meshes from world-axis extents without rotation', () => {

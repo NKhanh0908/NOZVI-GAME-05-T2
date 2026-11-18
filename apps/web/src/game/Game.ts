@@ -3,6 +3,7 @@ import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import {
   BALANCE,
   MSG,
+  officeDecor,
   officeLayout,
   type AvatarId,
   type EmoteId,
@@ -13,9 +14,14 @@ import { fadeOpacity } from './cameraMath';
 import { KeyboardInput } from './input';
 import { Player } from './player';
 import { setupLighting } from './lighting';
+import { applyMaterialTable } from './materials';
+import { createFrameRenderer, type FrameRenderer } from './postProcessing';
 import { buildRoom } from './room';
 import { renderQuality, type RenderQuality } from './renderQuality';
-import { loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
+import { deskProps } from './assets/deskProps';
+import { decorPlacements } from './assets/decorPlacements';
+import { WallClockView } from './wallClock';
+import { furniturePlacements, loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
 import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
 import { Nameplate } from './hud/Nameplate';
@@ -90,7 +96,11 @@ export class Game {
   private readonly rig: CameraRig;
   private readonly debugHook: unknown;
   private readonly disposeLighting: () => void;
+  /** T-1150: composer (bloom, MSAA) in `high` quality, direct rendering in `e2e`. */
+  private readonly frame: FrameRenderer;
   private furniture: FurnitureHandle | undefined;
+  /** T-1158: procedural wall clock showing the local time. */
+  private readonly clock = new WallClockView(officeDecor.clock);
   private disposed = false;
   /** Disconnects local prediction from the room (inputs out, patches in). */
   private unbindPrediction: () => void;
@@ -143,9 +153,20 @@ export class Game {
     office.traverse((o) => {
       if (o.userData.occluder) occluders.push(o);
     });
-    void loadFurniture(office, officeLayout).then((result) => {
+    // T-1152: desk props (screen, keyboard, mouse, lamp, stationery, decor) load with the
+    // furniture, so repeats share one InstancedMesh per model part.
+    const placements = [
+      ...furniturePlacements(officeLayout),
+      ...deskProps(officeLayout).map((p) => p.placement),
+      // T-1158: pantry cabinets and coffee machine, cups, rugs, pillows, plants, books.
+      ...decorPlacements(officeDecor),
+    ];
+    office.add(this.clock.group);
+    void loadFurniture(office, officeLayout, placements).then((result) => {
       if (this.disposed) return result.dispose();
       this.furniture = result;
+      // T-1149: material table (roughness, metalness, palette colour) on the Kenney materials.
+      applyMaterialTable(office);
       occluders.length = 0;
       office.updateMatrixWorld(true);
       office.traverse((o) => {
@@ -171,6 +192,7 @@ export class Game {
       this.renderer,
       this.scene,
       new THREE.Box3().setFromObject(office),
+      officeLayout.room,
     );
     this.disposeLighting = lighting.dispose;
     if (import.meta.env.DEV) {
@@ -190,13 +212,29 @@ export class Game {
         },
         getDrawCalls: () => this.measureDrawCalls(),
         getRenderQuality: () => this.renderQuality,
+        /** T-1150: true when frames go through the post-processing composer. */
+        isComposed: () => this.frame.composed,
         isLightingReady: () => lightingReady,
         getFurniture: () =>
           this.furniture && {
             loaded: this.furniture.loaded,
             failed: this.furniture.failed,
             instancedMeshes: this.furniture.instancedMeshes,
+            models: this.furniture.models,
           },
+        /** T-1152: the props drawn on one desk, with the model each one uses. */
+        /** T-1158: hand angles drawn by the wall clock (radians, clockwise from 12). */
+        getClock: () => this.clock.angles,
+        getDeskProps: (deskId: string) =>
+          deskProps(officeLayout)
+            .filter((p) => p.deskId === deskId)
+            .map((p) => ({
+              id: p.placement.box.id,
+              type: p.type,
+              file: p.placement.file,
+              loaded:
+                this.furniture !== undefined && !this.furniture.failed.includes(p.placement.box.id),
+            })),
         getActivity: () => this.player.activity,
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
@@ -222,6 +260,7 @@ export class Game {
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.frame = createFrameRenderer(this.renderer, this.scene, this.camera, this.renderQuality);
     // Stacking: CSS3D TV layer (0) under the WebGL canvas (1) under the labels (2).
     this.renderer.domElement.style.position = 'relative';
     this.renderer.domElement.style.zIndex = '1';
@@ -283,6 +322,7 @@ export class Game {
     const { clientWidth: w, clientHeight: h } = this.host;
     if (w === 0 || h === 0) return;
     this.renderer.setSize(w, h);
+    this.frame.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.tvLayer.setSize(w, h);
     this.camera.aspect = w / h;
@@ -349,7 +389,8 @@ export class Game {
       this.onFrame?.(dt);
       this.remotes.update(dt);
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
-      this.renderer.render(this.scene, this.camera);
+      this.clock.update(new Date());
+      this.frame.render();
       this.labelRenderer.render(this.scene, this.camera);
       this.tvLayer.render(this.camera);
     });
@@ -372,6 +413,8 @@ export class Game {
     if (this.debugHook !== undefined && w.__office === this.debugHook) delete w.__office;
     this.resizeObserver.disconnect();
     this.disposeLighting();
+    this.frame.dispose();
+    this.clock.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();

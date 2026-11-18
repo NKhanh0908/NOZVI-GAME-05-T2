@@ -20,7 +20,10 @@ export type TvVideoError = {
 };
 
 const DETAILS: Record<TvVideoErrorKind, string> = {
-  'invalid-id': 'The video id is not valid.',
+  // Pasted ids are already validated, so code 2 in practice means YouTube refused this video
+  // in an embed (T-1405: MNXGfA_eT_Y errors 0.1 s after cue on localhost and plays on
+  // youtube.com); "not valid" misled the owner.
+  'invalid-id': 'YouTube refused to play this video outside youtube.com.',
   html5: 'The player could not play this video.',
   'not-found': 'The video was removed or is private.',
   'embed-blocked': 'The owner does not allow playing it outside YouTube.',

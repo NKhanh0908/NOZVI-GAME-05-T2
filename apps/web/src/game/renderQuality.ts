@@ -2,7 +2,8 @@
  * Render-quality switch (Phase 4.1 task 1, T-1146). `high` is the default for real
  * hardware; `e2e` is the low setting Playwright builds use (headless SwiftShader WebGL),
  * so later Phase 4.1 tasks can turn off costly effects such as post-processing and
- * environment reflections there. Today no visual depends on it.
+ * environment reflections there. T-1150: post-processing (`postProcessing.ts`) is on in
+ * `high` only. Shadow maps are `high` only too (`lighting.ts` `shadowsEnabled`).
  */
 export type RenderQuality = 'high' | 'e2e';
 

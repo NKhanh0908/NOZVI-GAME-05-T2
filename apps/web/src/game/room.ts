@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { LayoutBox, OfficeLayout } from '@office/protocol';
+import { airConditioner, buildShellDetails } from './roomDetails';
+import { floorTexture } from './floorTexture';
 
 const TYPE_COLORS: Record<string, string> = {
   main_door: 'mainDoor',
@@ -40,9 +42,19 @@ function boxMesh(box: LayoutBox, color: string): THREE.Mesh {
 export function buildRoom(layout: OfficeLayout): THREE.Group {
   const group = new THREE.Group();
   const { width, depth, height } = layout.room;
+  // Tiled floor with grout (owner request 2026-11-18, layout tileSize + palette grout).
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(width, depth).rotateX(-Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: layout.palette.floor ?? '#E8E4DC' }),
+    new THREE.MeshStandardMaterial({
+      map: floorTexture(
+        layout.palette.floor ?? '#E8E4DC',
+        layout.palette.grout ?? '#C8C4BC',
+        width,
+        depth,
+        layout.floorTileSize,
+      ),
+      roughness: 0.7,
+    }),
   );
   floor.name = 'floor';
   floor.receiveShadow = true;
@@ -61,6 +73,14 @@ export function buildRoom(layout: OfficeLayout): THREE.Group {
     mesh.castShadow = false;
     group.add(mesh);
   }
-  for (const item of layout.items) group.add(boxMesh(item, colorFor(item, layout.palette)));
+  for (const item of layout.items) {
+    // T-1151: the air conditioner is procedural; doors swap to models in loadFurniture.
+    group.add(
+      item.type === 'air_conditioner'
+        ? airConditioner(item)
+        : boxMesh(item, colorFor(item, layout.palette)),
+    );
+  }
+  group.add(...buildShellDetails(layout));
   return group;
 }

@@ -2,7 +2,7 @@ export const FURNITURE: Record<string, string> = {
   desk: 'desk.glb',
   chair: 'chairDesk.glb',
   fridge: 'kitchenFridge.glb',
-  countertop: 'kitchenCabinet.glb',
+  // countertop: drawn from decor (base + upper cabinets, coffee machine), T-1158.
   water_dispenser: 'kitchenCabinet.glb',
   storage_cabinet: 'bookcaseClosedDoors.glb',
   lockers: 'bookcaseClosedDoors.glb',
@@ -13,13 +13,17 @@ export const FURNITURE: Record<string, string> = {
   coffee_table: 'tableCoffee.glb',
   TV: 'televisionModern.glb',
   decorative_lighting: 'lampSquareFloor.glb',
+  // T-1151: both doors use the Kenney doorway with door, fitted to the layout box.
+  main_door: 'doorwayFront.glb',
+  utility_door: 'doorwayFront.glb',
 };
-// Not listed (kept as palette boxes): main_door, utility_door, air_conditioner.
+// The air conditioner is procedural (`roomDetails.ts`, owner decision 2026-11-17).
 export const DESK_SCREEN = 'computerScreen.glb';
 export const COFFEE_MACHINE = 'kitchenCoffeeMachine.glb';
 
-// Phase 4.1 props (T-1147, owner list in DECISIONS 2026-11-17). Files only: nothing places them yet
-// (tasks 6, 7, 10 and 14 do). Kenney Furniture Kit 2.0, served from `/assets/furniture/`.
+// Phase 4.1 props (T-1147, owner list in DECISIONS 2026-11-17). Desk props are placed by
+// `deskProps.ts` (T-1152); the rest wait for tasks 6, 10 and 14. Kenney Furniture Kit 2.0,
+// served from `/assets/furniture/`.
 export const FURNITURE_PROPS = {
   keyboard: 'computerKeyboard.glb',
   mouse: 'computerMouse.glb',

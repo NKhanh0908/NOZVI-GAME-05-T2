@@ -1,0 +1,146 @@
+{
+  "note": "T-1158 decoration only: no colliders, no interactables. Boxes use the layout convention (position = box centre, size in metres, rotY in degrees; Kenney models face +Z at rotY 0). `model` is relative to apps/web/public/assets. `replaces` removes the palette box of that layout item.",
+  "items": [
+    {
+      "id": "pantry_base",
+      "model": "furniture/kitchenCabinet.glb",
+      "position": [3.24, 0.465, -4.2],
+      "size": [1.4, 0.93, 0.6],
+      "rotY": 0,
+      "replaces": "pantry_counter"
+    },
+    {
+      "id": "pantry_upper",
+      "model": "furniture/kitchenCabinetUpperDouble.glb",
+      "position": [3.24, 2.25, -4.3],
+      "size": [1.4, 0.7, 0.4],
+      "rotY": 0
+    },
+    {
+      "id": "pantry_coffee_machine",
+      "model": "furniture/kitchenCoffeeMachine.glb",
+      "position": [2.89, 1.13, -4.2],
+      "size": [0.35, 0.4, 0.35],
+      "rotY": 0
+    },
+    {
+      "id": "pantry_mug",
+      "model": "food/mug.glb",
+      "position": [3.48, 0.98, -4.25],
+      "size": [0.12, 0.1, 0.09],
+      "rotY": 0
+    },
+    {
+      "id": "pantry_cup",
+      "model": "food/cup-coffee.glb",
+      "position": [3.62, 0.98, -4.12],
+      "size": [0.08, 0.1, 0.08],
+      "rotY": 0
+    },
+    {
+      "id": "pantry_glass",
+      "model": "food/glass.glb",
+      "position": [3.6, 0.99, -4.3],
+      "size": [0.07, 0.12, 0.07],
+      "rotY": 0
+    },
+    {
+      "id": "pantry_toaster",
+      "model": "furniture/toaster.glb",
+      "position": [3.8, 1.02, -4.3],
+      "size": [0.2, 0.18, 0.14],
+      "rotY": 0
+    },
+    {
+      "id": "lounge_rug",
+      "model": "furniture/rugRounded.glb",
+      "position": [-4.26, 0.005, -1.62],
+      "size": [1.4, 0.01, 2.0],
+      "rotY": 0
+    },
+    {
+      "id": "lounge_bowl",
+      "model": "food/bowl.glb",
+      "position": [-4.26, 0.43, -1.8],
+      "size": [0.22, 0.06, 0.22],
+      "rotY": 0
+    },
+    {
+      "id": "lounge_apple_1",
+      "model": "food/apple.glb",
+      "position": [-4.3, 0.475, -1.83],
+      "size": [0.07, 0.07, 0.07],
+      "rotY": 0
+    },
+    {
+      "id": "lounge_apple_2",
+      "model": "food/apple.glb",
+      "position": [-4.21, 0.475, -1.77],
+      "size": [0.07, 0.07, 0.07],
+      "rotY": 40
+    },
+    {
+      "id": "lounge_banana",
+      "model": "food/banana.glb",
+      "position": [-4.24, 0.475, -1.86],
+      "size": [0.14, 0.05, 0.06],
+      "rotY": 20
+    },
+    {
+      "id": "sofa_pillow_north",
+      "model": "furniture/pillowBlue.glb",
+      "position": [-2.32, 0.6, -2.3],
+      "size": [0.15, 0.3, 0.35],
+      "rotY": 270
+    },
+    {
+      "id": "sofa_pillow_south",
+      "model": "furniture/pillowBlue.glb",
+      "position": [-2.32, 0.6, -1.05],
+      "size": [0.15, 0.3, 0.35],
+      "rotY": 270
+    },
+    {
+      "id": "entrance_doormat",
+      "model": "furniture/rugDoormat.glb",
+      "position": [-0.36, 0.005, -4.4],
+      "size": [0.9, 0.01, 0.5],
+      "rotY": 0
+    },
+    {
+      "id": "storage_plant",
+      "model": "furniture/plantSmall1.glb",
+      "position": [1.32, 2.32, -1.62],
+      "size": [0.2, 0.24, 0.2],
+      "rotY": 0
+    },
+    {
+      "id": "lockers_plant",
+      "model": "furniture/plantSmall3.glb",
+      "position": [5.16, 2.22, -1.62],
+      "size": [0.2, 0.24, 0.2],
+      "rotY": 0
+    },
+    {
+      "id": "shelves_books",
+      "model": "furniture/books.glb",
+      "position": [3.24, 1.5, -1.62],
+      "size": [0.3, 0.2, 0.4],
+      "rotY": 90
+    },
+    {
+      "id": "shelves_box",
+      "model": "furniture/cardboardBoxClosed.glb",
+      "position": [3.24, 0.4, -1.62],
+      "size": [0.4, 0.5, 0.4],
+      "rotY": 0
+    }
+  ],
+  "clock": {
+    "id": "wall_clock",
+    "position": [4.7, 2.0, -4.68],
+    "radius": 0.17,
+    "depth": 0.04,
+    "wall": "wall_north_east"
+  }
+}
