@@ -16,6 +16,28 @@ function load(file: string): Promise<THREE.Group> {
   return promise;
 }
 
+/**
+ * Layout boxes smaller than this volume (m³) only receive shadows (T-1148, plan §3.1). Every
+ * furniture item in the current layout is larger (the potted plants, 0.11 m³, are the
+ * smallest), so only desk props and small details added later stop casting.
+ */
+export const SHADOW_MIN_VOLUME = 0.05;
+
+export function castsShadow(box: LayoutBox): boolean {
+  return box.size[0] * box.size[1] * box.size[2] >= SHADOW_MIN_VOLUME;
+}
+
+/** One model drawn at one layout box. Placements that share a file are instanced together. */
+export type FurniturePlacement = { box: LayoutBox; file: string; rotY: number };
+
+/** Layout items that have a model in the manifest. Later desk props add their own placements. */
+export function furniturePlacements(layout: OfficeLayout): FurniturePlacement[] {
+  return layout.items.flatMap((box) => {
+    const file = FURNITURE[box.type];
+    return file ? [{ box, file, rotY: box.rotY ?? 0 }] : [];
+  });
+}
+
 /** Rotate by rotY, then scale on world axes so the bounding box equals the layout extents. */
 export function fitModel(source: THREE.Object3D, box: LayoutBox, rotY: number): THREE.Group {
   const model = source.clone(true);
@@ -33,9 +55,10 @@ export function fitModel(source: THREE.Object3D, box: LayoutBox, rotY: number): 
   wrapper.position.set(box.position[0], box.position[1] - box.size[1] / 2, box.position[2]);
   wrapper.name = box.id;
   wrapper.userData.occluder = true;
+  const cast = castsShadow(box);
   wrapper.traverse((object) => {
     if ((object as THREE.Mesh).isMesh) {
-      object.castShadow = true;
+      object.castShadow = cast;
       object.receiveShadow = true;
       object.userData.occluder = true;
     }
@@ -43,28 +66,128 @@ export function fitModel(source: THREE.Object3D, box: LayoutBox, rotY: number): 
   return wrapper;
 }
 
+function meshesOf(root: THREE.Object3D): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((object) => {
+    if ((object as THREE.Mesh).isMesh) meshes.push(object as THREE.Mesh);
+  });
+  return meshes;
+}
+
+/**
+ * The instancing vertex shader corrects normals by the column lengths of the instance
+ * matrix, which is exact only without shear. Fitted Kenney models (90° rotations, axis
+ * scale) always qualify; anything else keeps per-item meshes so lighting stays identical.
+ */
+function shearFree(matrix: THREE.Matrix4): boolean {
+  const e = matrix.elements;
+  const x = new THREE.Vector3(e[0], e[1], e[2]);
+  const y = new THREE.Vector3(e[4], e[5], e[6]);
+  const z = new THREE.Vector3(e[8], e[9], e[10]);
+  const tolerance = 1e-6;
+  return (
+    Math.abs(x.dot(y)) <= tolerance * x.length() * y.length() &&
+    Math.abs(y.dot(z)) <= tolerance * y.length() * z.length() &&
+    Math.abs(z.dot(x)) <= tolerance * z.length() * x.length()
+  );
+}
+
+/**
+ * Draws placements of one model with one `InstancedMesh` per source mesh (geometry +
+ * material), so N copies cost one draw call per part instead of N (plan §3.1). The instance
+ * matrices are the world matrices `fitModel` gives each copy, so the result looks the same.
+ * Returns undefined when instancing would not be exact; the caller then adds fitted groups.
+ */
+export function instanceModel(
+  source: THREE.Object3D,
+  placements: FurniturePlacement[],
+): THREE.InstancedMesh[] | undefined {
+  const fitted = placements.map((p) => {
+    const wrapper = fitModel(source, p.box, p.rotY);
+    wrapper.updateMatrixWorld(true);
+    return meshesOf(wrapper);
+  });
+  const parts = fitted[0] ?? [];
+  if (!fitted.every((meshes) => meshes.every((mesh) => shearFree(mesh.matrixWorld)))) {
+    return undefined;
+  }
+  const ids = placements.map((p) => p.box.id);
+  return parts.map((part, k) => {
+    const mesh = new THREE.InstancedMesh(part.geometry, part.material, placements.length);
+    fitted.forEach((meshes, i) => mesh.setMatrixAt(i, meshes[k]!.matrixWorld));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+    mesh.name = `${part.name || 'mesh'}@instanced`;
+    mesh.castShadow = part.castShadow;
+    mesh.receiveShadow = true;
+    mesh.userData.occluder = true;
+    /** Layout item id per instance index (camera occlusion, later highlights). */
+    mesh.userData.instanceIds = ids;
+    return mesh;
+  });
+}
+
+export type FurnitureSummary = {
+  /** Layout items drawn with a model. */
+  loaded: number;
+  /** Layout item ids whose model failed to load (they keep their palette box). */
+  failed: string[];
+  /** InstancedMesh objects in the room, one per repeated model part. */
+  instancedMeshes: number;
+};
+
+export type FurnitureHandle = FurnitureSummary & {
+  /** Removes the models from the room and releases the instance buffers. */
+  dispose(): void;
+};
+
 export async function loadFurniture(
   room: THREE.Group,
   layout: OfficeLayout,
-): Promise<{ loaded: number; failed: string[] }> {
+  placements: FurniturePlacement[] = furniturePlacements(layout),
+): Promise<FurnitureHandle> {
   const failed: string[] = [];
+  const added: THREE.Object3D[] = [];
   let loaded = 0;
+  // One batch per model file and shadow flag: an InstancedMesh casts for all its instances.
+  const batches = new Map<string, FurniturePlacement[]>();
+  for (const placement of placements) {
+    const key = `${placement.file}|${castsShadow(placement.box)}`;
+    batches.set(key, [...(batches.get(key) ?? []), placement]);
+  }
   await Promise.all(
-    layout.items.map(async (item) => {
-      const file = FURNITURE[item.type];
-      if (!file) return;
+    [...batches.values()].map(async (batch) => {
+      const present = batch.filter((p) => room.getObjectByName(p.box.id));
+      if (present.length === 0) return;
+      let source: THREE.Group;
       try {
-        const source = await load(file);
-        const box = room.getObjectByName(item.id);
-        if (!box) return;
-        const model = fitModel(source, item, item.rotY ?? 0);
-        room.remove(box);
-        room.add(model);
-        loaded++;
+        source = await load(batch[0]!.file);
       } catch {
-        failed.push(item.id);
+        failed.push(...present.map((p) => p.box.id));
+        return;
       }
+      const instanced = present.length > 1 ? instanceModel(source, present) : undefined;
+      const objects = instanced ?? present.map((p) => fitModel(source, p.box, p.rotY));
+      for (const p of present) room.remove(room.getObjectByName(p.box.id)!);
+      for (const object of objects) room.add(object);
+      added.push(...objects);
+      loaded += present.length;
     }),
   );
-  return { loaded, failed };
+  return {
+    loaded,
+    failed,
+    instancedMeshes: added.filter((o) => (o as THREE.InstancedMesh).isInstancedMesh).length,
+    dispose() {
+      for (const object of added) {
+        object.removeFromParent();
+        // Geometry and materials belong to the cached GLB scene and are reused by later games.
+        if ((object as THREE.InstancedMesh).isInstancedMesh) {
+          (object as THREE.InstancedMesh).dispose();
+        }
+      }
+      added.length = 0;
+    },
+  };
 }

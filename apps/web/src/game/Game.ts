@@ -15,7 +15,7 @@ import { Player } from './player';
 import { setupLighting } from './lighting';
 import { buildRoom } from './room';
 import { renderQuality, type RenderQuality } from './renderQuality';
-import { loadFurniture } from './assets/loadFurniture';
+import { loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
 import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
 import { Nameplate } from './hud/Nameplate';
@@ -90,7 +90,7 @@ export class Game {
   private readonly rig: CameraRig;
   private readonly debugHook: unknown;
   private readonly disposeLighting: () => void;
-  private furniture: Awaited<ReturnType<typeof loadFurniture>> | undefined;
+  private furniture: FurnitureHandle | undefined;
   private disposed = false;
   /** Disconnects local prediction from the room (inputs out, patches in). */
   private unbindPrediction: () => void;
@@ -144,6 +144,7 @@ export class Game {
       if (o.userData.occluder) occluders.push(o);
     });
     void loadFurniture(office, officeLayout).then((result) => {
+      if (this.disposed) return result.dispose();
       this.furniture = result;
       occluders.length = 0;
       office.updateMatrixWorld(true);
@@ -190,7 +191,12 @@ export class Game {
         getDrawCalls: () => this.measureDrawCalls(),
         getRenderQuality: () => this.renderQuality,
         isLightingReady: () => lightingReady,
-        getFurniture: () => this.furniture,
+        getFurniture: () =>
+          this.furniture && {
+            loaded: this.furniture.loaded,
+            failed: this.furniture.failed,
+            instancedMeshes: this.furniture.instancedMeshes,
+          },
         getActivity: () => this.player.activity,
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
@@ -357,6 +363,7 @@ export class Game {
     this.input.dispose();
     window.removeEventListener('keydown', this.keydown);
     this.rig.dispose();
+    this.furniture?.dispose();
     this.remotes.dispose();
     this.unbindBoard();
     this.roster.dispose();
