@@ -44,6 +44,8 @@ Decor (T-1158): data `packages/protocol/src/layout/office-decor.json` (`officeDe
 
 Room shell details (T-1151): `apps/web/src/game/roomDetails.ts` (window frames + glass, skirting, ceiling seams, sign, door headers, procedural air conditioner), called from `room.ts` `buildRoom`; door models via `FURNITURE` in `furnitureManifest.ts`; shell windows parsed into `OfficeLayout.windows` (`packages/protocol` layout). Tests: `apps/web/test/roomDetails.test.ts`, `room.test.ts`.
 
+Materials and reflections (T-1149): `apps/web/src/game/materials.ts` maps Kenney material names to a class and applies `BALANCE.rendering.materials` (called in `Game.ts` after `loadFurniture`); `lighting.ts` `setupEnvironment` sets a PMREM `RoomEnvironment` as `scene.environment` in `high`, light probe in `e2e`. Tests: `apps/web/test/materials.test.ts`, `lighting.test.ts`.
+
 Desk props (T-1152): `apps/web/src/game/assets/deskProps.ts` resolves each desk's six layout components to Kenney models (`furnitureManifest.ts` `DESK_SCREEN`, `FURNITURE_PROPS`); `Game.ts` passes them to `loadFurniture` as `standalone` placements; dev hook `getDeskProps`. Tests: `apps/web/test/deskProps.test.ts`, e2e `deskProps.spec.ts`.
 
 Avatar render cost (T-1161): `apps/web/src/game/avatar/mergeSkinned.ts` merges an avatar GLB's skinned parts into one vertex-coloured skinned mesh (called from `AvatarView` `loadTemplate`); `RemoteAvatars.createBlobShadow` draws the shared blob shadow and remote avatars cast no real shadow. Tests: `apps/web/test/mergeSkinned.test.ts`, `remoteAvatars.test.ts`; numbers from e2e `renderBaseline.spec.ts`.

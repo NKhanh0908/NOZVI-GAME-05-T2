@@ -2,20 +2,22 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { BALANCE, type OfficeLayout } from '@office/protocol';
+import { renderQuality, type RenderQuality } from './renderQuality';
 
 const R = BALANCE.rendering;
 
 /**
  * Configures colour output, tone mapping, image-based fill, the window sun and the emissive
  * ceiling panels. The sun's orthographic shadow camera is fitted tightly around `bounds`
- * (the room) in light space. `ready` resolves once the environment light probe has been
- * baked and added.
+ * (the room) in light space. `ready` resolves once the image-based fill is in place (see
+ * `setupEnvironment`).
  */
 export function setupLighting(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
   bounds: THREE.Box3,
   room: OfficeLayout['room'],
+  quality: RenderQuality = renderQuality(import.meta.env),
 ): { ready: Promise<void>; dispose: () => void } {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping =
@@ -26,22 +28,7 @@ export function setupLighting(
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   scene.background = new THREE.Color(R.background);
-  // Image-based fill: bake THREE's RoomEnvironment into a spherical-harmonics light probe once.
-  // A PMREM scene.environment gives the same diffuse look on these roughness-1 materials but
-  // costs ~70 ms per frame under software WebGL (SwiftShader); the probe is nearly free.
-  const cubeTarget = new THREE.WebGLCubeRenderTarget(32, { type: THREE.HalfFloatType });
-  const roomEnv = new RoomEnvironment();
-  new THREE.CubeCamera(0.1, 100, cubeTarget).update(renderer, roomEnv);
-  roomEnv.dispose();
-  let disposed = false;
-  const ready = LightProbeGenerator.fromCubeRenderTarget(renderer, cubeTarget)
-    .then((probe) => {
-      if (disposed) return;
-      probe.intensity = R.environmentIntensity;
-      scene.add(probe);
-    })
-    .catch((e: unknown) => console.warn('Environment light probe unavailable', e))
-    .finally(() => cubeTarget.dispose());
+  const environment = setupEnvironment(renderer, scene, quality);
 
   const h = R.hemisphere;
   scene.add(new THREE.HemisphereLight(h.sky, h.ground, h.intensity));
@@ -63,13 +50,92 @@ export function setupLighting(
   scene.add(fixtures);
 
   return {
-    ready,
+    ready: environment.ready,
     dispose: () => {
-      disposed = true;
+      environment.dispose();
       sun.shadow.dispose();
       fixtures.removeFromParent();
       fixtures.geometry.dispose();
       (fixtures.material as THREE.Material).dispose();
+    },
+  };
+}
+
+/** Image-based fill: a texture to use as `scene.environment` or a light probe to add. */
+export type EnvironmentDeps = {
+  /** `high`: PMREM of RoomEnvironment; `setupEnvironment` disposes the returned texture. */
+  pmrem: (renderer: THREE.WebGLRenderer) => THREE.Texture;
+  /** `e2e`: spherical-harmonics light probe baked from RoomEnvironment. */
+  probe: (renderer: THREE.WebGLRenderer) => Promise<THREE.LightProbe>;
+};
+
+function roomEnvironmentPmrem(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const generator = new THREE.PMREMGenerator(renderer);
+  const roomEnv = new RoomEnvironment();
+  const target = generator.fromScene(roomEnv, R.reflections.blurSigma);
+  roomEnv.dispose();
+  generator.dispose();
+  return target.texture;
+}
+
+function roomEnvironmentProbe(renderer: THREE.WebGLRenderer): Promise<THREE.LightProbe> {
+  const cubeTarget = new THREE.WebGLCubeRenderTarget(32, { type: THREE.HalfFloatType });
+  const roomEnv = new RoomEnvironment();
+  new THREE.CubeCamera(0.1, 100, cubeTarget).update(renderer, roomEnv);
+  roomEnv.dispose();
+  return LightProbeGenerator.fromCubeRenderTarget(renderer, cubeTarget).finally(() =>
+    cubeTarget.dispose(),
+  );
+}
+
+const defaultEnvironmentDeps: EnvironmentDeps = {
+  pmrem: roomEnvironmentPmrem,
+  probe: roomEnvironmentProbe,
+};
+
+/**
+ * Image-based fill from THREE's RoomEnvironment at `BALANCE.rendering.environmentIntensity`.
+ * `high` (T-1149): `scene.environment` is a PMREM of it, which gives the diffuse fill and soft
+ * reflections on glass, metal and screens (it replaces the probe, so the fill is not doubled).
+ * `e2e`: a spherical-harmonics light probe and no `scene.environment`, since a PMREM
+ * environment costs ~70 ms per frame under software WebGL (SwiftShader) while the probe is
+ * nearly free. `dispose` clears `scene.environment` and releases the PMREM texture, or
+ * removes the probe.
+ */
+export function setupEnvironment(
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Scene,
+  quality: RenderQuality,
+  deps: EnvironmentDeps = defaultEnvironmentDeps,
+): { ready: Promise<void>; dispose: () => void } {
+  if (quality === 'high') {
+    const texture = deps.pmrem(renderer);
+    scene.environment = texture;
+    scene.environmentIntensity = R.environmentIntensity;
+    return {
+      ready: Promise.resolve(),
+      dispose: () => {
+        if (scene.environment === texture) scene.environment = null;
+        texture.dispose();
+      },
+    };
+  }
+  let disposed = false;
+  let added: THREE.LightProbe | undefined;
+  const ready = deps
+    .probe(renderer)
+    .then((probe) => {
+      if (disposed) return;
+      probe.intensity = R.environmentIntensity;
+      scene.add(probe);
+      added = probe;
+    })
+    .catch((e: unknown) => console.warn('Environment light probe unavailable', e));
+  return {
+    ready,
+    dispose: () => {
+      disposed = true;
+      added?.removeFromParent();
     },
   };
 }

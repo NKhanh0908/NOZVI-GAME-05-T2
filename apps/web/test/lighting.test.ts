@@ -1,7 +1,12 @@
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BALANCE, officeLayout } from '@office/protocol';
-import { buildCeilingFixtures, ceilingFixturePositions } from '../src/game/lighting';
+import {
+  buildCeilingFixtures,
+  ceilingFixturePositions,
+  setupEnvironment,
+  type EnvironmentDeps,
+} from '../src/game/lighting';
 
 const F = BALANCE.rendering.ceilingFixtures;
 
@@ -39,5 +44,59 @@ describe('ceiling fixtures', () => {
     // Instance matrices are Float32.
     const expected = ceilingFixturePositions(officeLayout.room)[0] ?? [NaN, NaN, NaN];
     p.toArray().forEach((v, i) => expect(v).toBeCloseTo(expected[i] ?? NaN, 5));
+  });
+});
+
+describe('environment (T-1149)', () => {
+  const renderer = {} as THREE.WebGLRenderer;
+
+  function fakes() {
+    const texture = new THREE.Texture();
+    const disposeTexture = vi.spyOn(texture, 'dispose');
+    const probe = new THREE.LightProbe();
+    const deps = {
+      pmrem: vi.fn<EnvironmentDeps['pmrem']>(() => texture),
+      probe: vi.fn<EnvironmentDeps['probe']>(() => Promise.resolve(probe)),
+    };
+    return { texture, disposeTexture, probe, deps };
+  }
+
+  it('sets scene.environment from the RoomEnvironment PMREM in high quality and disposes it', async () => {
+    const scene = new THREE.Scene();
+    const { texture, disposeTexture, deps } = fakes();
+    const env = setupEnvironment(renderer, scene, 'high', deps);
+    await env.ready;
+    expect(deps.pmrem).toHaveBeenCalledWith(renderer);
+    expect(deps.probe).not.toHaveBeenCalled();
+    expect(scene.environment).toBe(texture);
+    expect(scene.environmentIntensity).toBe(BALANCE.rendering.environmentIntensity);
+    expect(scene.children.some((c) => (c as THREE.LightProbe).isLightProbe)).toBe(false);
+
+    env.dispose();
+    expect(scene.environment).toBeNull();
+    expect(disposeTexture).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the light probe and sets no environment in e2e quality', async () => {
+    const scene = new THREE.Scene();
+    const { probe, deps } = fakes();
+    const env = setupEnvironment(renderer, scene, 'e2e', deps);
+    await env.ready;
+    expect(deps.pmrem).not.toHaveBeenCalled();
+    expect(scene.environment).toBeNull();
+    expect(probe.parent).toBe(scene);
+    expect(probe.intensity).toBe(BALANCE.rendering.environmentIntensity);
+
+    env.dispose();
+    expect(probe.parent).toBeNull();
+  });
+
+  it('does not add the probe after an early dispose in e2e quality', async () => {
+    const scene = new THREE.Scene();
+    const { probe, deps } = fakes();
+    const env = setupEnvironment(renderer, scene, 'e2e', deps);
+    env.dispose();
+    await env.ready;
+    expect(probe.parent).toBeNull();
   });
 });
