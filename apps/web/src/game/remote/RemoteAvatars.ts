@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import { BALANCE, isAvatarId, type Activity, type AvatarId } from '@office/protocol';
+import {
+  BALANCE,
+  isAvatarId,
+  toEmote,
+  type Activity,
+  type AvatarId,
+  type EmoteId,
+} from '@office/protocol';
 import {
   InterpolationBuffer,
   renderTime,
@@ -15,8 +22,12 @@ import { presenceLabel } from '../hud/activityLabel';
 export type RemoteView = {
   readonly root: THREE.Object3D;
   setActivity(activity: Activity): void;
+  /** Optional so test fakes stay small; `AvatarView` implements it (T-1222). */
+  setEmote?(emote: EmoteId | ''): void;
   update(dt: number): void;
   dispose(): void;
+  /** Typing overlay weight, 0 to 1 (T-1219). */
+  readonly typing?: number;
 };
 /** The parts of `Nameplate` a remote avatar uses. */
 export type RemoteNameplate = {
@@ -45,6 +56,10 @@ export type RemoteInfo = {
   connected: boolean;
   /** The nameplate status text as drawn. */
   status: string;
+  /** Typing overlay weight as drawn, 0 to 1 (T-1219). */
+  typing: number;
+  /** Emote as drawn ('' = none; T-1222). */
+  emote: EmoteId | '';
   /**
    * The interpolation time (ms, `performance.now` base minus the delay) the drawn pose was
    * sampled at, or null before the first sample or while seated. Lets e2e measure speed on
@@ -61,6 +76,7 @@ type Remote = {
   readonly nameplate: RemoteNameplate;
   readonly unsubscribe: () => void;
   activity: Activity;
+  emote: EmoteId | '';
   status: string;
   /** The seat seen in the last snapshot; a change restarts interpolation. */
   seatId: string;
@@ -87,13 +103,46 @@ function createCapsule(): THREE.Mesh[] {
     new THREE.MeshStandardMaterial({ color: '#3B9AE2' }),
   );
   body.position.y = 0.85;
-  body.castShadow = true;
   const nose = new THREE.Mesh(
     new THREE.BoxGeometry(0.12, 0.12, 0.2),
     new THREE.MeshStandardMaterial({ color: '#222426' }),
   );
   nose.position.set(0, 1.5, r);
   return [body, nose];
+}
+
+let blobShadow: { geometry: THREE.CircleGeometry; material: THREE.MeshBasicMaterial } | null = null;
+
+/**
+ * T-1161: remote avatars do not cast real shadows (each caster costs one shadow-pass draw call
+ * per part); a soft dark disc on the floor stands in for one draw call. Geometry and material
+ * are shared by every remote and never disposed. The fade comes from per-vertex alpha: centre
+ * opaque, rim transparent.
+ */
+export function createBlobShadow(): THREE.Mesh {
+  if (!blobShadow) {
+    const geometry = new THREE.CircleGeometry(BALANCE.movement.capsuleRadius * 1.6, 20);
+    const count = geometry.getAttribute('position').count;
+    const rgba = new Float32Array(count * 4);
+    // CircleGeometry: vertex 0 is the centre, the rest are on the rim.
+    rgba[3] = 1;
+    geometry.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+    blobShadow = { geometry, material };
+  }
+  const mesh = new THREE.Mesh(blobShadow.geometry, blobShadow.material);
+  mesh.name = 'blob-shadow';
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.01;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  return mesh;
 }
 
 function disposeMeshes(meshes: THREE.Mesh[]): void {
@@ -170,7 +219,7 @@ export class RemoteAvatars {
     const capsule = createCapsule();
     group.add(...capsule);
     const nameplate = this.deps.createNameplate();
-    group.add(nameplate.object);
+    group.add(nameplate.object, createBlobShadow());
     const remote: Remote = {
       employee,
       buffer,
@@ -179,6 +228,7 @@ export class RemoteAvatars {
       nameplate,
       unsubscribe: this.source.onChange(employee, snapshot),
       activity: toActivity(employee.activity),
+      emote: toEmote(employee.emote ?? ''),
       status: '',
       seatId,
       view: null,
@@ -197,8 +247,10 @@ export class RemoteAvatars {
         disposeMeshes(remote.capsule);
         remote.capsule.length = 0;
         remote.view = view;
+        view.root.traverse((o) => (o.castShadow = false));
         group.add(view.root);
         view.setActivity(remote.activity);
+        view.setEmote?.(remote.emote);
       })
       .catch((error: unknown) =>
         console.warn(`Remote avatar ${employee.avatarId} failed; keeping capsule.`, error),
@@ -230,7 +282,9 @@ export class RemoteAvatars {
       remote.group.rotation.y = pose.heading;
     }
     remote.activity = toActivity(remote.employee.activity);
+    remote.emote = toEmote(remote.employee.emote ?? '');
     remote.view?.setActivity(remote.activity);
+    remote.view?.setEmote?.(remote.emote);
     remote.view?.update(dt);
     const reconnecting = remote.employee.connected === false;
     remote.status = presenceLabel(remote.activity, remote.employee.connected);
@@ -255,6 +309,8 @@ export class RemoteAvatars {
       model: r.view ? 'avatar' : 'capsule',
       connected: r.employee.connected !== false,
       status: r.status,
+      typing: r.view?.typing ?? 0,
+      emote: r.emote,
       sampledAt: r.sampledAt,
     }));
   }

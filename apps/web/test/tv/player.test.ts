@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeTvPlayer, type TvPlayer } from '../../src/tv/player';
 import {
+  createTvDebugLog,
+  defaultTvLog,
+  TV_LOG_MAX_ENTRIES,
+  type TvLogEntry,
+  type TvLogTarget,
+} from '../../src/tv/tvDebugLog';
+import {
   loadYouTubeIframeApi,
+  SEEK_END_MARGIN_SECONDS,
+  YT_STATE,
   tvPlayerKind,
   YT_IFRAME_API_URL,
   YouTubeTvPlayer,
@@ -129,6 +138,7 @@ function stubYouTube() {
         setPlaybackRate: vi.fn(),
         getCurrentTime: vi.fn(() => 12.5),
         getDuration: vi.fn(() => 0),
+        getAvailablePlaybackRates: vi.fn(() => [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]),
         mute: vi.fn(),
         unMute: vi.fn(),
         destroy: vi.fn(),
@@ -201,7 +211,7 @@ describe('YouTubeTvPlayer', () => {
     expect(p.isMuted()).toBe(true);
     p.load('AAAAAAAAAAA', 7);
     p.play();
-    p.setRate(1.05);
+    p.setRate(1.25); // before the video starts: refused (rates unknown)
     yt.finishLoading();
     await flush();
 
@@ -214,15 +224,23 @@ describe('YouTubeTvPlayer', () => {
     expect(api.mute).toHaveBeenCalledOnce();
     expect(api.cueVideoById).toHaveBeenCalledWith({ videoId: 'AAAAAAAAAAA', startSeconds: 7 });
     expect(api.playVideo).toHaveBeenCalledOnce();
-    expect(api.setPlaybackRate).toHaveBeenCalledWith(1.05);
-    // Order is kept: cue, then play, then rate.
-    const order = [api.cueVideoById, api.playVideo, api.setPlaybackRate].map(
+    expect(api.setPlaybackRate).not.toHaveBeenCalled();
+    // Order is kept: cue, then play.
+    const order = [api.cueVideoById, api.playVideo].map(
       (f) => (f as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!,
     );
     expect(order).toEqual([...order].sort((x, y) => x - y));
+    expect(p.isReady()).toBe(false);
+    expect(p.getTime()).toBe(7); // the cued start until the video reports its position
+
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    expect(p.isReady()).toBe(true);
+    p.setRate(1.25);
+    expect(api.setPlaybackRate).toHaveBeenCalledWith(1.25);
 
     p.pause();
     p.seek(30);
+    expect(p.getTime()).toBe(12.5); // the IFrame player's position once started
     p.stop();
     p.unmute();
     expect(api.pauseVideo).toHaveBeenCalledOnce();
@@ -230,7 +248,8 @@ describe('YouTubeTvPlayer', () => {
     expect(api.stopVideo).toHaveBeenCalledOnce();
     expect(api.unMute).toHaveBeenCalledOnce();
     expect(p.isMuted()).toBe(false);
-    expect(p.getTime()).toBe(12.5);
+    expect(p.isReady()).toBe(false);
+    expect(p.getTime()).toBe(0);
     // Duration is null until the IFrame API reports a positive length.
     expect(p.getDuration()).toBeNull();
     (api.getDuration as ReturnType<typeof vi.fn>).mockReturnValue(596.5);
@@ -270,6 +289,205 @@ describe('YouTubeTvPlayer', () => {
     yt.finishLoading();
     await flush();
     expect(yt.players).toHaveLength(0);
+  });
+});
+
+/** A started YouTube adapter on a stubbed API, with a recording debug log. */
+async function startedPlayer(start = true) {
+  const yt = stubYouTube();
+  const logged: TvLogEntry[] = [];
+  const log = createTvDebugLog({ __tvLog: logged }, { debug: () => undefined }, () => 0);
+  const p = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc, log);
+  p.load('AAAAAAAAAAA', 0);
+  yt.finishLoading();
+  await flush();
+  const [{ opts, api }] = yt.players as [(typeof yt.players)[number]];
+  opts.events.onReady();
+  if (start) opts.events.onStateChange({ data: YT_STATE.playing });
+  const fn = (name: keyof YtPlayer) => api[name] as ReturnType<typeof vi.fn>;
+  return { p, opts, api, fn, logged };
+}
+
+describe('YouTubeTvPlayer T-1405 guards (IFrame error 5)', () => {
+  it('holds seeks and rates until the cued video starts, then applies only the latest seek', async () => {
+    const yt = stubYouTube();
+    const p = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc, null);
+    p.load('AAAAAAAAAAA', 0);
+    p.play();
+    // What the drift loop used to queue while the IFrame API loaded.
+    p.seek(3);
+    p.seek(4);
+    p.setRate(1);
+    p.seek(5);
+    yt.finishLoading();
+    await flush();
+    const [{ opts, api }] = yt.players as [(typeof yt.players)[number]];
+    opts.events.onReady();
+    expect(api.cueVideoById).toHaveBeenCalledOnce();
+    expect(api.seekTo).not.toHaveBeenCalled();
+    expect(api.setPlaybackRate).not.toHaveBeenCalled();
+    // Cued and buffering are not a start; a later seek still only moves the pending target.
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    opts.events.onStateChange({ data: YT_STATE.buffering });
+    p.seek(6);
+    expect(api.seekTo).not.toHaveBeenCalled();
+    expect(p.getTime()).toBe(6);
+
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    expect(api.seekTo).toHaveBeenCalledOnce();
+    expect(api.seekTo).toHaveBeenCalledWith(6, true);
+    // Rate 1 was already the player's rate: nothing is sent.
+    expect(api.setPlaybackRate).not.toHaveBeenCalled();
+    // A second playing state (after a pause) does not replay anything.
+    opts.events.onStateChange({ data: YT_STATE.paused });
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    expect(api.seekTo).toHaveBeenCalledOnce();
+  });
+
+  it('a new load or stop resets readiness and drops a held seek', async () => {
+    const { p, opts, fn } = await startedPlayer();
+    expect(p.isReady()).toBe(true);
+    p.load('BBBBBBBBBBB', 2);
+    expect(p.isReady()).toBe(false);
+    p.seek(9);
+    p.stop();
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    expect(fn('seekTo')).not.toHaveBeenCalled();
+    expect(fn('stopVideo')).toHaveBeenCalledOnce();
+  });
+
+  it('clamps seeks to [0, duration - margin] and drops non-finite times', async () => {
+    const { p, fn } = await startedPlayer();
+    p.seek(-4);
+    expect(fn('seekTo')).toHaveBeenLastCalledWith(0, true);
+    fn('getDuration').mockReturnValue(100);
+    p.seek(250);
+    expect(fn('seekTo')).toHaveBeenLastCalledWith(100 - SEEK_END_MARGIN_SECONDS, true);
+    p.seek(Number.NaN);
+    p.seek(Infinity);
+    expect(fn('seekTo')).toHaveBeenCalledTimes(2);
+  });
+
+  it('cues at a finite, non-negative start', async () => {
+    const yt = stubYouTube();
+    const p = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc, null);
+    p.load('AAAAAAAAAAA', Number.NaN);
+    p.load('BBBBBBBBBBB', -2);
+    yt.finishLoading();
+    await flush();
+    const [{ opts, api }] = yt.players as [(typeof yt.players)[number]];
+    opts.events.onReady();
+    expect(api.cueVideoById).toHaveBeenNthCalledWith(1, {
+      videoId: 'AAAAAAAAAAA',
+      startSeconds: 0,
+    });
+    expect(api.cueVideoById).toHaveBeenNthCalledWith(2, {
+      videoId: 'BBBBBBBBBBB',
+      startSeconds: 0,
+    });
+  });
+
+  it('refuses nudge rates the video does not list (0.95 / 1.05) and sends listed ones', async () => {
+    const { p, fn } = await startedPlayer();
+    expect(p.supportsRate(1)).toBe(true);
+    expect(p.supportsRate(1.05)).toBe(false);
+    expect(p.supportsRate(0.95)).toBe(false);
+    expect(p.supportsRate(1.25)).toBe(true);
+    p.setRate(1.05);
+    p.setRate(0.95);
+    p.setRate(Number.NaN);
+    p.setRate(0);
+    expect(fn('setPlaybackRate')).not.toHaveBeenCalled();
+    p.setRate(1.25);
+    p.setRate(1.25); // unchanged: not sent again
+    p.setRate(1);
+    expect(fn('setPlaybackRate').mock.calls).toEqual([[1.25], [1]]);
+  });
+
+  it('accepts 1.05 when the video lists it', async () => {
+    const { p, opts, fn } = await startedPlayer(false);
+    fn('getAvailablePlaybackRates').mockReturnValue([0.95, 1, 1.05]);
+    expect(p.supportsRate(1.05)).toBe(false); // not started: rates unknown
+    p.setRate(1.05); // refused before the start
+    expect(fn('setPlaybackRate')).not.toHaveBeenCalled();
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    expect(p.supportsRate(1.05)).toBe(true);
+    p.setRate(1.05);
+    expect(fn('setPlaybackRate')).toHaveBeenCalledWith(1.05);
+  });
+
+  it('passes origin and enablejsapi', async () => {
+    const yt = stubYouTube();
+    const container = {
+      ...yt.container,
+      ownerDocument: {
+        ...yt.container.ownerDocument,
+        defaultView: { location: { origin: 'http://localhost:5173' } },
+      },
+    };
+    const p = new YouTubeTvPlayer(container as unknown as HTMLElement, yt.win, yt.doc, null);
+    p.load('AAAAAAAAAAA', 0);
+    yt.finishLoading();
+    await flush();
+    const [{ opts }] = yt.players as [(typeof yt.players)[number]];
+    expect(opts.playerVars).toMatchObject({ enablejsapi: 1, origin: 'http://localhost:5173' });
+  });
+});
+
+describe('TV debug log (T-1405)', () => {
+  it('records adapter calls, IFrame calls, state changes, rates, duration and error codes', async () => {
+    const { p, opts, fn, logged } = await startedPlayer();
+    fn('getDuration').mockReturnValue(212);
+    p.seek(30);
+    opts.events.onError({ data: 5 });
+    const events = logged.map((e) => e.event);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        'load',
+        'loading IFrame API',
+        'create YT.Player',
+        'onReady',
+        'yt.cueVideoById',
+        'onStateChange',
+        'video started',
+        'seek',
+        'yt.seekTo',
+        'onError',
+      ]),
+    );
+    expect(events.indexOf('yt.cueVideoById')).toBeGreaterThan(events.indexOf('onReady'));
+    expect(logged.find((e) => e.event === 'video started')?.data).toMatchObject({
+      availablePlaybackRates: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+    });
+    expect(logged.find((e) => e.event === 'onStateChange')?.data).toEqual({
+      state: 1,
+      name: 'playing',
+    });
+    expect(logged.find((e) => e.event === 'yt.seekTo')?.data).toEqual({
+      seconds: 30,
+      allowSeekAhead: true,
+    });
+    expect(logged.find((e) => e.event === 'onError')?.data).toMatchObject({
+      code: 5,
+      duration: 212,
+    });
+  });
+
+  it('writes to window.__tvLog and console.debug, capped, and is off outside DEV', () => {
+    const target: TvLogTarget = {};
+    const debug = vi.fn();
+    const log = createTvDebugLog(target, { debug }, () => 12.4);
+    log('play');
+    log('seek', { time: 3 });
+    expect(target.__tvLog).toEqual([
+      { t: 12, event: 'play' },
+      { t: 12, event: 'seek', data: { time: 3 } },
+    ]);
+    expect(debug).toHaveBeenNthCalledWith(1, '[tv]', 'play');
+    expect(debug).toHaveBeenNthCalledWith(2, '[tv]', 'seek', { time: 3 });
+    for (let i = 0; i < TV_LOG_MAX_ENTRIES + 5; i++) log('tick');
+    expect(target.__tvLog).toHaveLength(TV_LOG_MAX_ENTRIES);
+    expect(defaultTvLog(false)).toBeNull();
   });
 });
 

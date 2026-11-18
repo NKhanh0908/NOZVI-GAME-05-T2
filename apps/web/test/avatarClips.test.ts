@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
-import { AvatarView, CLIP_FOR } from '../src/game/avatar/AvatarView';
+import { BALANCE, EMOTES, canEmote } from '@office/protocol';
+import { AvatarView, CLIP_FOR, EMOTE_SOURCE } from '../src/game/avatar/AvatarView';
 import { Player } from '../src/game/player';
 
 afterEach(() => {
@@ -233,3 +234,124 @@ it('loads each avatar GLB once and clones it for further views', async () => {
   expect(b.root.parent).toBeNull();
   expect(a.hasFiniteBones()).toBe(true);
 });
+
+const ARM_BONES = ['UpperArmL', 'LowerArmL', 'HandL', 'UpperArmR', 'LowerArmR', 'HandR'];
+const bone = (v: AvatarView, name: string) => v.root.getObjectByName(name) as THREE.Bone;
+/** Largest angle (rad) between the arm bones of two views of the same preset. */
+const armDifference = (a: AvatarView, b: AvatarView) =>
+  Math.max(...ARM_BONES.map((n) => bone(a, n).quaternion.angleTo(bone(b, n).quaternion)));
+const armPose = (v: AvatarView) => ARM_BONES.map((n) => bone(v, n).quaternion.clone());
+
+it.each(['men_suit', 'women_suit'] as const)(
+  'types while working on %s and returns to the seated idle pose within the cross-fade',
+  async (avatarId) => {
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(loadLocalGltf);
+    // Same clip timeline on both views: one sits, the other works (T-1219).
+    const seated = await AvatarView.load(avatarId);
+    const working = await AvatarView.load(avatarId);
+    for (const v of [seated, working]) v.root.rotation.y = 1.1;
+    seated.setActivity('sitting');
+    working.setActivity('working');
+    const step = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        seated.update(1 / 60);
+        working.update(1 / 60);
+        expect(working.hasFiniteBones()).toBe(true);
+      }
+    };
+    step(150); // Sitting_Enter, then the seated loop with the overlay fully in.
+    expect(working.typing).toBe(1);
+    expect(seated.typing).toBe(0);
+    expect(armDifference(seated, working)).toBeGreaterThan(0.3);
+    // The hands move over time (alternating taps), not a frozen pose.
+    const first = armPose(working);
+    step(7);
+    const second = armPose(working);
+    expect(Math.max(...first.map((q, i) => q.angleTo(second[i]!)))).toBeGreaterThan(0.02);
+    // Hands reach forward toward the keyboard, in front of the shoulders.
+    working.root.updateMatrixWorld(true);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      working.root.getWorldQuaternion(new THREE.Quaternion()),
+    );
+    for (const side of ['L', 'R']) {
+      const reach = bone(working, `Hand${side}`)
+        .getWorldPosition(new THREE.Vector3())
+        .sub(bone(working, `UpperArm${side}`).getWorldPosition(new THREE.Vector3()))
+        .dot(forward);
+      expect(reach).toBeGreaterThan(0.25);
+    }
+
+    // Stop working: the arms are back on the seated idle pose once the cross-fade is over.
+    working.setActivity('sitting');
+    const frames = Math.ceil(BALANCE.activity.crossFadeSeconds * 60) + 1;
+    const half = Math.floor(frames / 2);
+    step(half);
+    expect(working.typing).toBeGreaterThan(0);
+    expect(armDifference(seated, working)).toBeGreaterThan(1e-3);
+    step(frames - half);
+    expect(working.typing).toBe(0);
+    expect(armDifference(seated, working)).toBeLessThan(1e-4);
+    seated.dispose();
+    working.dispose();
+  },
+);
+
+const POSE_BONES = [...ARM_BONES, 'Chest', 'Neck', 'Head', 'Hips'];
+/** Largest bone angle (rad) between two views, over arms, chest, head and hips. */
+const poseDifference = (a: AvatarView, b: AvatarView) =>
+  Math.max(...POSE_BONES.map((n) => bone(a, n).quaternion.angleTo(bone(b, n).quaternion)));
+
+it('maps every protocol emote to a UAL clip or an overlay', () => {
+  expect(Object.keys(EMOTE_SOURCE).sort()).toEqual([...EMOTES].sort());
+  for (const id of EMOTES) {
+    const source = EMOTE_SOURCE[id];
+    if ('clip' in source) expect(source.clip).toBe('Dance_Loop');
+    else expect(['wave', 'think', 'laugh', 'stretch']).toContain(source.overlay);
+  }
+});
+
+it.each(['men_suit', 'women_suit'] as const)(
+  'plays every emote on %s standing and seated, without NaN, and fades back',
+  async (avatarId) => {
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(loadLocalGltf);
+    const vi_now = vi.spyOn(performance, 'now');
+    for (const posture of ['idle', 'working'] as const) {
+      for (const id of EMOTES) {
+        if (!canEmote(posture, id)) continue;
+        const plain = await AvatarView.load(avatarId);
+        const emoting = await AvatarView.load(avatarId);
+        for (const v of [plain, emoting]) {
+          v.root.rotation.y = -0.7;
+          v.setActivity(posture);
+        }
+        const step = (n: number) => {
+          for (let i = 0; i < n; i++) {
+            vi_now.mockReturnValue(i * 16);
+            plain.update(1 / 60);
+            emoting.update(1 / 60);
+            expect(emoting.hasFiniteBones(), `${posture} ${id}`).toBe(true);
+          }
+        };
+        step(120); // Seated: through Sitting_Enter into the loop.
+        emoting.setEmote(id);
+        expect(emoting.shownEmote).toBe(id);
+        step(40);
+        expect(poseDifference(plain, emoting), `${posture} ${id}`).toBeGreaterThan(0.15);
+        // The emote ends: overlays fade out over the cross-fade, a clip fades back.
+        emoting.setEmote('');
+        // A clip emote restarts the activity clip, like a fresh view of that activity.
+        const reference = 'clip' in EMOTE_SOURCE[id] ? await AvatarView.load(avatarId) : plain;
+        reference.root.rotation.y = -0.7;
+        reference.setActivity(posture);
+        const frames = Math.ceil((BALANCE.activity.crossFadeSeconds + 0.1) * 60);
+        for (let i = 0; i < frames; i++) {
+          if (reference !== plain) reference.update(1 / 60);
+          step(1);
+        }
+        // A working avatar resumes typing, so it is compared with a working view.
+        expect(poseDifference(reference, emoting), `${posture} ${id} after`).toBeLessThan(0.02);
+        for (const v of new Set([plain, emoting, reference])) v.dispose();
+      }
+    }
+  },
+);

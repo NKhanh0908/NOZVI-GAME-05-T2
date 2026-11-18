@@ -1,4 +1,5 @@
 import type { Prompt as P } from '../game/interaction/InteractionController';
+import { color, font, hudPanel, space } from './tokens';
 
 export function Prompt({ prompt }: { prompt: P }) {
   if (!prompt) return null;
@@ -6,15 +7,16 @@ export function Prompt({ prompt }: { prompt: P }) {
     <div
       data-testid="prompt"
       style={{
+        ...hudPanel,
         position: 'absolute',
-        bottom: 32,
+        bottom: space[6],
         left: '50%',
         transform: 'translateX(-50%)',
-        padding: '8px 16px',
-        borderRadius: 8,
-        background: 'rgba(34,36,38,0.8)',
-        color: prompt.available ? '#fff' : '#f5a3a3',
-        font: '600 15px system-ui',
+        padding: `${space[2]} ${space[4]}`,
+        color: prompt.available ? color.hudText : color.hudDangerText,
+        fontSize: font.md,
+        fontWeight: font.bold,
+        whiteSpace: 'nowrap',
       }}
     >
       {prompt.text}

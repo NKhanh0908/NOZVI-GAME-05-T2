@@ -1,6 +1,38 @@
+/** The wave lasts the same for the legacy `wave` intent and the `wave` emote. */
+const WAVE_SECONDS = 1.6;
+
 export const BALANCE = {
   interaction: { facingConeDeg: 90 },
-  activity: { drinkSeconds: 2.5, waveSeconds: 1.6, crossFadeSeconds: 0.25 },
+  activity: { drinkSeconds: 2.5, waveSeconds: WAVE_SECONDS, crossFadeSeconds: 0.25 },
+  /**
+   * REQ-INT-003 coffee routine (plan phase-4.1 §3.4, §6.2). A sip lasts
+   * `activity.drinkSeconds`; the machine serves one employee at a time.
+   */
+  coffee: { brewSeconds: 4, sips: 3 },
+  /**
+   * REQ-AVATAR-004 emotes (plan phase-4.1 §3.8, DECISIONS 2026-11-17). The server ends an
+   * emote after its duration. A new emote is refused until `minGapSeconds` after the
+   * previous emote of the same employee started, which also limits the rate.
+   */
+  emote: {
+    durationSeconds: { wave: WAVE_SECONDS, dance: 4, think: 3, laugh: 2.5, stretch: 3 },
+    minGapSeconds: 1,
+  },
+  /**
+   * Client-only avatar overlays (plan phase-4.1 §3.7, owner option (a)). Directions are
+   * weights of the avatar's forward / up / right axes; the overlay blends in and out over
+   * `activity.crossFadeSeconds`.
+   */
+  avatar: {
+    /** REQ-AVATAR-002 typing while `working` (T-1219): alternating taps, Hz per hand. */
+    typing: { tapHz: 3.5, tapDepth: 0.35, reach: 0.6, elbowOut: 0.18, handsIn: 0.32 },
+    /** REQ-AVATAR-004 emote overlays (T-1222); angles in radians, rates in Hz. */
+    emote: {
+      think: { headNod: 0.3 },
+      laugh: { hz: 4, chest: 0.12, head: 0.2 },
+      stretch: { swayHz: 0.5, sway: 0.1, lean: 0.15 },
+    },
+  },
   movement: { walkSpeed: 2.0, runSpeed: 4.0, capsuleRadius: 0.3, turnRate: 12 },
   camera: {
     fovDeg: 60,

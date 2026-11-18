@@ -1,6 +1,6 @@
 # STATUS — project memory
 
-Updated: 2026-11-17 by Claude Code · Phase: Phase 4 (FEAT-67) — all 11 tasks implemented on `req/feat-67`; owner checks pending; next Phase 4.1
+Updated: 2026-11-18 by Claude Code · Phase: Phase 4.1 (FEAT-68) in progress on `req/feat-68`; Phase 4 (FEAT-67) merged into `dev` with follow-ups open
 Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/SPEC.md` (implementation spec). `docs/GDD.md` is deprecated (casual template).
 
 ## Done
@@ -21,14 +21,15 @@ Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTU
 
 - **Phase 3 implemented** on `feat/phase-3` (`docs/plans/phase-3.md`, Meridian FEAT-51): Colyseus server (OfficeRoom per code, 20 Hz authoritative movement, server-owned activity and seats, 20 s reconnect window), client connection, fixed-step prediction, remote avatars, replicated seats, employee list and entrance board, reconnect banner. T-1041 verification results and the acceptance record: plan §10: ten-client check passes (9 bots + 1 browser, 11th refused); the 10-minute network-profile soak shows remote jumps in 0.6% of frames, in line with retransmit spikes longer than the 100 ms interpolation delay.
 
-- **Phase 4 implemented** on `req/feat-67` (`docs/plans/phase-4.md`, Meridian FEAT-67, T-1163 to T-1145): shared YouTube TV on the entertainment wall (CSS3D iframe with depth-only occluder, server `TvSim` with ordered commands and a 5-per-10-s limit, curated catalog plus pasted links, drift sync, TV mode panel with Close and focus recovery, muted start, per-video error UI). Owner accepted the plan §6 defaults on 2026-11-17. Verification record: plan §10 — 10-minute three-client drift soak under `NET_PROFILE=test` passes (max 0.205 s against the 1.0 s target, fake player).
+- **Phase 4 merged into `dev`** (PR #1 on 2026-11-17, e2e fix T-1377 in PR #2 on 2026-11-18) from `req/feat-67` (`docs/plans/phase-4.md`, Meridian FEAT-67, T-1163 to T-1145): shared YouTube TV on the entertainment wall (CSS3D iframe with depth-only occluder, server `TvSim` with ordered commands and a 5-per-10-s limit, curated catalog plus pasted links, drift sync, TV mode panel with Close and focus recovery, muted start, per-video error UI). Owner accepted the plan §6 defaults on 2026-11-17. Verification record: plan §10 — 10-minute three-client drift soak under `NET_PROFILE=test` passes (max 0.205 s against the 1.0 s target, fake player).
 
 ## Next (ordered)
 
 1. Owner-only Phase 4 checks (plan §10): Milestone A LAN playtest with two real browsers; one manual real-YouTube run (drift, focus recovery, occlusion); FPS with the TV playing next to the Phase 3 numbers; one foreground Playwright run; confirm or replace the 8 seeded catalog videos.
-2. Owner: review and merge `req/feat-67`.
-3. Phase 4.1 — office upgrade: `docs/plans/phase-4.1.md` (draft for owner review), Meridian FEAT-68, tasks T-1146 to T-1160 (T-1157 dropped) plus one proposal awaiting approval.
-4. Still open from Phase 3: draw-call budget decision; T-1035 parked until deployment.
+2. Phase 4 follow-ups (FEAT-67): T-1405 waits for the owner to retry the pasted video `MNXGfA_eT_Y` on `req/feat-68` and paste `window.__tvLog` (fix in `5a18a1e`); T-1374 (nudge rates on real YouTube; seek-only fallback already in `5a18a1e`), T-1375 (owner decision: convergence vs nudge limits), T-1376 (video end after controller leaves). T-1377 (`remote.spec.ts` walk test races) merged in PR #2, awaiting owner review on Meridian.
+3. Phase 4.1 — office upgrade (visuals, furnished desks with a working desktop screen, avatar typing motion and an emote menu, multi-step coffee with a cup, interaction feedback, UI restyle; no sound, no voice chat): plan `docs/plans/phase-4.1.md` approved by the owner on 2026-11-16, Meridian FEAT-68 with tasks T-1146 to T-1160 (T-1157 sound dropped by the owner), T-1165 (coffee protocol) and T-1218 to T-1222 (avatars and emotes, added 2026-11-16). In progress on `req/feat-68` from 2026-11-17. Committed on the branch (Meridian "Đã commit", not merged): T-1146 baseline and render-quality switch, T-1147 Kenney furniture/food models with credits, T-1148 instanced furniture (spawn 174 -> 105 calls), T-1153 server coffee routine, T-1159 UI restyle with tokens, T-1165 coffee protocol, T-1218 avatar options, T-1219 typing motion, T-1220 to T-1222 emotes (protocol, server, client). Still open: T-1149 to T-1152, T-1154 to T-1156, T-1158, T-1160 (assigned to T1 - Claude). 2026-11-18 verification on the branch: `pnpm check` passes (protocol 136, web 318, server 117 unit tests); e2e visual, walk, sit, remote, ten and render baseline pass.
+4. Phase 3 leftovers: T-1035 parked until deployment. The draw-call budget is closed (T-1161, T-1162, DECISIONS 2026-11-18): avatar parts merged into one skinned mesh and a blob shadow for remote avatars, 2 calls per remote avatar; ten employees 285 -> 105 calls and 149.5k -> 90.0k triangles (under the 120k target), no LOD needed.
+5. `dev` also holds the owner's raw Kenney zips (`kenney/*.zip`, about 9.7 MB, commit `6c15589`); the models T-1147 needs are extracted on `req/feat-68`, so the zips can be dropped or gitignored if the owner agrees.
 
 ## Open items
 

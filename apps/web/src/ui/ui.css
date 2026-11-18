@@ -1,0 +1,101 @@
+/*
+ * Base styles for the 2D UI (T-1159). Only token references (`tokens.css`); states that
+ * inline styles cannot express live here: hover, disabled and the keyboard focus ring.
+ */
+html,
+body,
+#root {
+  background: var(--ov-color-page);
+  color: var(--ov-color-text);
+  font-family: var(--ov-font-family);
+}
+
+/* Dark HUD panels switch the focus ring to the lime that reads on dark. */
+.ov-hud {
+  --ov-color-focus: var(--ov-color-focus-dark);
+}
+/* On the red alert banner lime is too weak; the ring follows the alert text instead. */
+.ov-alert {
+  --ov-color-focus: var(--ov-color-alert-text);
+}
+
+/* Visible keyboard focus on every control (REQ-UI-004; WCAG 2.4.7). */
+:where(button, input, select, textarea, a, [tabindex]:not(canvas)):focus-visible {
+  outline: var(--ov-focus-width) solid var(--ov-color-focus);
+  outline-offset: 2px;
+}
+/* The game canvas takes focus to read keys; it is not a control and keeps no ring. */
+canvas:focus {
+  outline: none;
+}
+
+.ov-button {
+  font: var(--ov-font-weight-bold) var(--ov-font-size-sm) / 1.2 var(--ov-font-family);
+  color: var(--ov-color-hud-text);
+  background: var(--ov-color-hud-control);
+  border: 1px solid var(--ov-color-hud-border);
+  border-radius: var(--ov-radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.ov-button:hover:not(:disabled) {
+  background: var(--ov-color-hud-control-hover);
+}
+.ov-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ov-button-primary {
+  font: var(--ov-font-weight-bold) var(--ov-font-size-md) / 1.2 var(--ov-font-family);
+  color: var(--ov-color-on-accent);
+  background: var(--ov-color-accent);
+  border: 1px solid var(--ov-color-accent);
+  border-radius: var(--ov-radius-md);
+  padding: 10px 16px;
+  cursor: pointer;
+}
+.ov-button-primary:hover:not(:disabled) {
+  background: var(--ov-color-accent-hover);
+}
+.ov-button-primary:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Secondary button on a light surface (join screen Retry). */
+.ov-button-quiet {
+  font: var(--ov-font-weight-bold) var(--ov-font-size-md) / 1.2 var(--ov-font-family);
+  color: var(--ov-color-text);
+  background: var(--ov-color-surface-light);
+  border: 1px solid var(--ov-color-border);
+  border-radius: var(--ov-radius-md);
+  padding: 10px 16px;
+  cursor: pointer;
+}
+.ov-button-quiet:hover {
+  background: var(--ov-color-page);
+}
+
+.ov-input {
+  font: var(--ov-font-size-md) / 1.3 var(--ov-font-family);
+  color: var(--ov-color-text);
+  background: var(--ov-color-paper);
+  border: 1px solid var(--ov-color-border);
+  border-radius: var(--ov-radius-sm);
+  padding: 8px 10px;
+  box-sizing: border-box;
+  width: 100%;
+}
+.ov-hud .ov-input {
+  font-size: var(--ov-font-size-sm);
+  padding: 5px 8px;
+}
+
+.ov-radio {
+  accent-color: var(--ov-color-lime-deep);
+}
+.ov-range {
+  accent-color: var(--ov-color-lime);
+  width: 100%;
+}

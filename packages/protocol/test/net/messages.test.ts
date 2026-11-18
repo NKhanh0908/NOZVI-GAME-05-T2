@@ -7,6 +7,7 @@ import {
   parseJoinOptions,
   parseTvCommand,
 } from '../../src/net/messages';
+import { EMOTES } from '../../src/activity';
 import { officeLayout } from '../../src/layout/layout';
 import { PROTOCOL_VERSION } from '../../src/version';
 
@@ -46,9 +47,28 @@ describe('parseIntent', () => {
       type: 'sit',
       seatId: deskSeat,
     });
-    for (const type of ['stand', 'toggleWork', 'drink', 'wave']) {
+    for (const type of ['stand', 'toggleWork', 'drink', 'wave', 'brew']) {
       expect(parseIntent({ type })).toEqual({ type });
     }
+  });
+  it('accepts an emote intent for every listed emote id (REQ-AVATAR-004)', () => {
+    for (const emote of EMOTES) {
+      expect(parseIntent({ type: 'emote', emote })).toEqual({ type: 'emote', emote });
+    }
+  });
+  it.each([
+    ['an unknown emote id', { type: 'emote', emote: 'cry' }],
+    ['a missing emote id', { type: 'emote' }],
+    ['an empty emote id', { type: 'emote', emote: '' }],
+    ['a wrongly cased emote id', { type: 'emote', emote: 'Wave' }],
+    ['a non-string emote id', { type: 'emote', emote: 1 }],
+    ['an array emote id', { type: 'emote', emote: ['wave'] }],
+    ['an emote with a seat id', { type: 'emote', emote: 'wave', seatId: deskSeat }],
+    ['free text in place of an id', { type: 'emote', emote: 'hello everyone' }],
+    ['an emote id on another intent', { type: 'wave', emote: 'dance' }],
+    ['an emote id on sit', { type: 'sit', seatId: deskSeat, emote: 'dance' }],
+  ])('rejects %s', (_label, raw) => {
+    expect(parseIntent(raw)).toBeNull();
   });
   it('knows desk and sofa seats from the layout', () => {
     expect(SEAT_IDS.size).toBe(officeLayout.workstations.length + officeLayout.sofaSeats.length);

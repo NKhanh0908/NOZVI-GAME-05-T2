@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { isSeated, nextActivity, statusFor } from '../src/activity';
+import {
+  EMPTY_HAND,
+  isSeated,
+  nextActivity,
+  nextHeld,
+  statusFor,
+  toItem,
+  type Held,
+} from '../src/activity';
+import { BALANCE } from '../src/balance';
 
 describe('activity', () => {
   it('walks and stops', () => {
@@ -26,6 +35,59 @@ describe('activity', () => {
     expect(nextActivity('idle', { type: 'wave' })).toBe('waving');
     expect(nextActivity('waving', { type: 'actionDone' })).toBe('idle');
     expect(nextActivity('sitting', { type: 'wave' })).toBe('sitting');
+  });
+  it('brews from a free state with an empty hand only (REQ-INT-003)', () => {
+    expect(nextActivity('idle', { type: 'brew' })).toBe('brewing');
+    expect(nextActivity('walking', { type: 'brew' }, '')).toBe('brewing');
+    expect(nextActivity('idle', { type: 'brew' }, 'coffee')).toBe('idle');
+    expect(nextActivity('sitting', { type: 'brew' })).toBe('sitting');
+    expect(nextActivity('drinking', { type: 'brew' })).toBe('drinking');
+    expect(nextActivity('brewing', { type: 'brew' })).toBe('brewing');
+  });
+  it('brewDone ends brewing and hands over a full coffee', () => {
+    expect(nextActivity('brewing', { type: 'brewDone' })).toBe('idle');
+    expect(nextActivity('idle', { type: 'brewDone' })).toBe('idle');
+    expect(nextHeld('brewing', EMPTY_HAND, { type: 'brewDone' })).toEqual({
+      item: 'coffee',
+      sips: BALANCE.coffee.sips,
+    });
+    // A brew that was cancelled (no longer brewing) gives nothing.
+    expect(nextHeld('walking', EMPTY_HAND, { type: 'brewDone' })).toEqual(EMPTY_HAND);
+    // actionDone does not end a brew; only brewDone does.
+    expect(nextActivity('brewing', { type: 'actionDone' })).toBe('brewing');
+  });
+  it('moving cancels brewing; standing still keeps it; other intents are refused', () => {
+    expect(nextActivity('brewing', { type: 'move' })).toBe('walking');
+    expect(nextActivity('brewing', { type: 'stop' })).toBe('brewing');
+    expect(nextActivity('brewing', { type: 'sit', kind: 'desk' })).toBe('brewing');
+    expect(nextActivity('brewing', { type: 'drink' })).toBe('brewing');
+    expect(nextActivity('brewing', { type: 'wave' })).toBe('brewing');
+    expect(nextHeld('brewing', EMPTY_HAND, { type: 'move' })).toEqual(EMPTY_HAND);
+  });
+  it('drink without a cup is a plain drink and leaves the hand empty', () => {
+    expect(nextActivity('idle', { type: 'drink' }, '')).toBe('drinking');
+    expect(nextHeld('drinking', EMPTY_HAND, { type: 'actionDone' })).toEqual(EMPTY_HAND);
+  });
+  it('drink with a cup takes one sip per finished drink; the last sip removes the cup', () => {
+    expect(nextActivity('walking', { type: 'drink' }, 'coffee')).toBe('drinking');
+    expect(nextActivity('sitting', { type: 'drink' }, 'coffee')).toBe('sitting');
+    let held: Held = nextHeld('brewing', EMPTY_HAND, { type: 'brewDone' });
+    for (let left = BALANCE.coffee.sips - 1; left > 0; left--) {
+      held = nextHeld('drinking', held, { type: 'actionDone' });
+      expect(held).toEqual({ item: 'coffee', sips: left });
+    }
+    held = nextHeld('drinking', held, { type: 'actionDone' });
+    expect(held).toEqual(EMPTY_HAND);
+    // A sip cancelled by moving costs nothing.
+    const full: Held = { item: 'coffee', sips: 3 };
+    expect(nextHeld('drinking', full, { type: 'move' })).toBe(full);
+    // Waving with a cup does not drink from it.
+    expect(nextHeld('waving', full, { type: 'actionDone' })).toBe(full);
+  });
+  it('reads replicated item strings', () => {
+    expect(toItem('coffee')).toBe('coffee');
+    expect(toItem('')).toBe('');
+    expect(toItem('tea')).toBe('');
   });
   it('maps status', () => {
     expect(statusFor('working')).toBe('working');

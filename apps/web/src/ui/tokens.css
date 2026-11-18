@@ -1,0 +1,80 @@
+/*
+ * Design tokens for the 2D UI (Phase 4.1 task 15, T-1159; plan §3.6): the single source of
+ * every colour, spacing step, radius, type size and shadow of the join screen and the HUD.
+ * Colours come from the SPEC REQ-ROOM-001 palette (layout `palette`): off-white walls,
+ * light-grey tile, walnut wood, black electronics and lime-green accents. Components read
+ * them through `tokens.ts`; text contrast pairs are checked in `test/uiTokens.test.ts`.
+ */
+:root {
+  /* Palette (layout `palette` values). */
+  --ov-color-page: #f5f6f8; /* walls */
+  --ov-color-paper: #ffffff;
+  --ov-color-tile: #e8e4dc; /* floor */
+  --ov-color-ink: #222426; /* chairSeat: black electronics */
+  --ov-color-ink-soft: #4a4f55;
+  --ov-color-walnut: #6e4d38; /* deskSurfaces */
+  --ov-color-lime: #6cb33f; /* chairBack */
+  --ov-color-lime-strong: #48a832; /* deskDividers */
+  --ov-color-lime-deep: #2f7a1f;
+
+  /* Light surfaces (join screen). */
+  --ov-color-surface-light: var(--ov-color-paper);
+  --ov-color-text: var(--ov-color-ink);
+  --ov-color-text-muted: var(--ov-color-ink-soft);
+  --ov-color-border: #767b82;
+  --ov-color-danger: #b42318;
+
+  /* Dark HUD surfaces over the 3D view (list, prompt, toast, banner, TV panel). */
+  --ov-color-hud: rgba(34, 36, 38, 0.92);
+  --ov-color-hud-text: #ffffff;
+  --ov-color-hud-text-muted: #c9cdd2;
+  --ov-color-hud-control: rgba(255, 255, 255, 0.12);
+  --ov-color-hud-control-hover: rgba(255, 255, 255, 0.2);
+  --ov-color-hud-border: rgba(255, 255, 255, 0.45);
+  --ov-color-hud-danger-text: #f5a3a3;
+  --ov-color-hud-danger-bg: rgba(214, 69, 69, 0.25);
+  --ov-color-hud-danger-border: rgba(245, 163, 163, 0.6);
+  --ov-color-alert: rgba(180, 35, 24, 0.94);
+  --ov-color-alert-text: #ffffff;
+
+  /* Accent (lime): primary buttons and the selected entry carry dark ink text. */
+  --ov-color-accent: var(--ov-color-lime-strong);
+  --ov-color-accent-hover: var(--ov-color-lime);
+  --ov-color-on-accent: var(--ov-color-ink);
+  --ov-color-selected: rgba(108, 179, 63, 0.35);
+
+  /* Keyboard focus ring: deep lime on light surfaces, lime on the dark HUD. */
+  --ov-color-focus-light: var(--ov-color-lime-deep);
+  --ov-color-focus-dark: var(--ov-color-lime);
+  --ov-color-focus: var(--ov-color-focus-light);
+  --ov-focus-width: 3px;
+
+  /* Spacing (4 px grid). */
+  --ov-space-1: 4px;
+  --ov-space-2: 8px;
+  --ov-space-3: 12px;
+  --ov-space-4: 16px;
+  --ov-space-5: 24px;
+  --ov-space-6: 32px;
+
+  /* Radius. */
+  --ov-radius-sm: 4px;
+  --ov-radius-md: 8px;
+  --ov-radius-lg: 12px;
+
+  /* Type scale. */
+  --ov-font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ov-font-size-xs: 12px;
+  --ov-font-size-sm: 13px;
+  --ov-font-size-md: 15px;
+  --ov-font-size-lg: 18px;
+  --ov-font-size-xl: 26px;
+  --ov-font-weight-regular: 400;
+  --ov-font-weight-medium: 500;
+  --ov-font-weight-bold: 600;
+  --ov-line-height: 1.4;
+
+  /* Shadows. */
+  --ov-shadow-1: 0 2px 8px rgba(0, 0, 0, 0.18);
+  --ov-shadow-2: 0 8px 24px rgba(0, 0, 0, 0.16);
+}

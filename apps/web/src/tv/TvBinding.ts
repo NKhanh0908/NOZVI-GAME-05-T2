@@ -83,6 +83,11 @@ const commandKey = (tv: TvSnapshot) => `${tv.updatedAt}|${tv.status}|${tv.videoI
  * failed for this session. The player stops, the view carries the error while the shared
  * state still names that video, and the binding never loads it again; the shared state is
  * left alone, so other clients keep playing if their player can. Another video clears it.
+ *
+ * Player readiness (T-1405): the drift sync runs only while `player.isReady()` (the loaded
+ * video has started), so the seconds the IFrame API needs to load never turn into nudges
+ * and seeks against a stale position. A nudge rate the player does not support becomes a
+ * seek to the expected position (seek-only fallback, T-1374).
  */
 export class TvBinding implements TvControls, TvViewSource {
   private room: TvRoom | null = null;
@@ -278,7 +283,8 @@ export class TvBinding implements TvControls, TvViewSource {
       return;
     }
     const expected = this.expected() ?? 0;
-    if (this.loaded !== tv.videoId) {
+    const loadedNow = this.loaded !== tv.videoId;
+    if (loadedNow) {
       player.setRate(1);
       player.load(tv.videoId, expected);
       this.loaded = tv.videoId;
@@ -286,12 +292,16 @@ export class TvBinding implements TvControls, TvViewSource {
     if (tv.status === 'playing') player.play();
     else player.pause();
     // A command is an explicit position: a paused TV shows exactly the paused frame, and a
-    // playing one is aligned with a hard seek beyond the ignore band.
+    // playing one is aligned with a hard seek beyond the ignore band. A video loaded just
+    // now already starts at `expected` (T-1405: no seek right after the cue).
     const off = Math.abs(player.getTime() - expected);
-    if (tv.status === 'paused' ? off > 0 : off >= BALANCE.tv.ignoreBelowSeconds) {
+    if (!loadedNow && (tv.status === 'paused' ? off > 0 : off >= BALANCE.tv.ignoreBelowSeconds)) {
       player.seek(expected);
     }
-    this.run(this.drift.resync(tv, { time: player.getTime() }, this.now()));
+    const cmd = this.drift.resync(tv, { time: player.getTime() }, this.now());
+    // T-1405: until the video has started its position is not real; only a rate reset
+    // passes (the next check after the start corrects any drift).
+    if (player.isReady() || (cmd.kind === 'rate' && cmd.rate === 1)) this.run(cmd);
   }
 
   /** Periodic drift check while playing. */
@@ -311,13 +321,21 @@ export class TvBinding implements TvControls, TvViewSource {
       this.tv.status !== 'idle' &&
       this.loaded !== null &&
       this.loaded === this.tv.videoId &&
-      this.endedAt !== this.key
+      this.endedAt !== this.key &&
+      this.player.isReady()
     );
   }
 
   private run(cmd: PlayerCommand): void {
     if (cmd.kind === 'seek') this.player.seek(cmd.time);
-    else if (cmd.kind === 'rate') this.player.setRate(cmd.rate);
+    else if (cmd.kind === 'rate') {
+      if (this.player.supportsRate(cmd.rate)) this.player.setRate(cmd.rate);
+      else {
+        // T-1405 / T-1374: the player does not offer the nudge rate; fall back to a seek.
+        const expected = this.expected();
+        if (expected !== null) this.player.seek(expected);
+      }
+    }
   }
 
   /** The local player reported an error for the loaded video. */

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BALANCE, officeLayout } from '@office/protocol';
 import { ceilingPitch, clampPitch, damp, orbitOffset, resolveDistance } from './cameraMath';
+import { OccluderHider } from './occluderHider';
 
 const C = BALANCE.camera;
 const MAX_Y = officeLayout.room.height - C.ceilingClearance;
@@ -16,7 +17,7 @@ export class CameraRig {
   private readonly ray = new THREE.Raycaster();
   private readonly focus = new THREE.Vector3();
   private readonly dirVec = new THREE.Vector3();
-  private readonly hidden = new Set<THREE.Object3D>();
+  private readonly hider = new OccluderHider();
 
   private readonly onDown = (e: PointerEvent) => {
     if (e.button === 0) this.dragging = true;
@@ -57,6 +58,8 @@ export class CameraRig {
     this.dirVec.set(dir.x, dir.y, dir.z).normalize();
     this.ray.set(this.focus, this.dirVec);
     this.ray.far = this.distance;
+    // Restore last frame's hidden occluders first: a collapsed furniture instance cannot be hit.
+    this.hider.restore();
     const hits = this.ray.intersectObjects(this.occluders, false);
     const hit = hits[0];
     const wanted = resolveDistance(this.distance, hit ? hit.distance : null);
@@ -64,11 +67,9 @@ export class CameraRig {
       wanted < this.currentDistance ? wanted : damp(this.currentDistance, wanted, C.stiffness, dt);
     // The minimum-distance clamp wins over occlusion (OQ-007), so near a wall the camera can
     // end up behind it. Hide any occluder still between the focus and the camera this frame.
-    this.restoreHidden();
     for (const h of hits) {
       if (h.distance >= this.currentDistance + this.camera.near) break;
-      h.object.visible = false;
-      this.hidden.add(h.object);
+      this.hider.hide(h);
     }
     const o = orbitOffset(this.yaw, pitch, this.currentDistance);
     this.camera.position.set(
@@ -89,13 +90,8 @@ export class CameraRig {
     return this.effectivePitch;
   }
 
-  private restoreHidden(): void {
-    for (const o of this.hidden) o.visible = true;
-    this.hidden.clear();
-  }
-
   dispose(): void {
-    this.restoreHidden();
+    this.hider.restore();
     this.dom.removeEventListener('pointerdown', this.onDown);
     window.removeEventListener('pointerup', this.onUp);
     window.removeEventListener('pointermove', this.onMove);

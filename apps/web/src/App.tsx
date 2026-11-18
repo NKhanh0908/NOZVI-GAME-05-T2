@@ -7,6 +7,7 @@ import type { EmployeeRoster } from './ui/employeeRoster';
 import { JoinScreen, type JoinResult } from './ui/JoinScreen';
 import { ConnectionBanner } from './ui/ConnectionBanner';
 import { TvPanel } from './ui/TvPanel';
+import { EmoteMenu } from './ui/EmoteMenu';
 import {
   Connection,
   serverUrl,
@@ -130,21 +131,13 @@ export function App() {
           <Prompt prompt={{ text: toast, available: true }} />
         </div>
       )}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 16,
-          left: 16,
-          color: '#fff',
-          background: 'rgba(34,36,38,0.8)',
-          borderRadius: 8,
-          padding: '6px 10px',
-          font: '600 12px system-ui',
-          pointerEvents: 'none',
-        }}
-      >
-        G — Wave
-      </div>
+      {game && !tvOpen && (
+        <EmoteMenu
+          allowed={(emote) => game.canEmote(emote)}
+          onEmote={(emote) => game.emote(emote)}
+          onDone={() => game.focusGame()}
+        />
+      )}
     </div>
   );
 }

@@ -9,6 +9,50 @@ describe('net schema', () => {
     expect(e.seatId).toBe('');
     expect(e.connected).toBe(true);
     expect(e.lastSeq).toBe(0);
+    expect(e.item).toBe('');
+    expect(e.sips).toBe(0);
+    expect(e.emote).toBe('');
+  });
+  it('replicates the running emote and its end (REQ-AVATAR-004)', () => {
+    const state = new OfficeState();
+    const e = new EmployeeState();
+    Object.assign(e, { name: 'An', avatarId: 'men_suit', activity: 'working' });
+    state.employees.set('s1', e);
+    const encoder = new Encoder(state);
+    const decoded = new OfficeState();
+    const decoder = new Decoder(decoded);
+    decoder.decode(encoder.encodeAll());
+    encoder.discardChanges();
+
+    e.emote = 'think';
+    decoder.decode(encoder.encode());
+    encoder.discardChanges();
+    expect(decoded.employees.get('s1')).toMatchObject({ activity: 'working', emote: 'think' });
+
+    e.emote = '';
+    decoder.decode(encoder.encode());
+    expect(decoded.employees.get('s1')).toMatchObject({ activity: 'working', emote: '' });
+  });
+  it('replicates item and sips, including the cup being emptied (REQ-INT-003)', () => {
+    const state = new OfficeState();
+    const e = new EmployeeState();
+    Object.assign(e, { name: 'An', avatarId: 'men_suit', activity: 'brewing' });
+    state.employees.set('s1', e);
+    const encoder = new Encoder(state);
+    const decoded = new OfficeState();
+    const decoder = new Decoder(decoded);
+    decoder.decode(encoder.encodeAll());
+    encoder.discardChanges();
+    expect(decoded.employees.get('s1')!.activity).toBe('brewing');
+
+    Object.assign(e, { activity: 'idle', item: 'coffee', sips: 3 });
+    decoder.decode(encoder.encode());
+    encoder.discardChanges();
+    expect(decoded.employees.get('s1')).toMatchObject({ item: 'coffee', sips: 3 });
+
+    Object.assign(e, { item: '', sips: 0 });
+    decoder.decode(encoder.encode());
+    expect(decoded.employees.get('s1')).toMatchObject({ item: '', sips: 0 });
   });
   it('round-trips an employee through the encoder with exact float64 positions', () => {
     const state = new OfficeState();

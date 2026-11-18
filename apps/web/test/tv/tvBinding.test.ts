@@ -364,3 +364,73 @@ describe('TvBinding drift and clock (REQ-TV-006, OQ-023)', () => {
     expect(r.listeners.size).toBe(0);
   });
 });
+
+describe('TvBinding player readiness and rate fallback (T-1405)', () => {
+  it('runs no drift seeks or nudges while the pasted video is still starting', () => {
+    const h = harness();
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    // The real player reports no position for a few seconds after the cue (API load).
+    let ready = false;
+    vi.spyOn(h.player, 'isReady').mockImplementation(() => ready);
+    const seek = vi.spyOn(h.player, 'seek');
+    const setRate = vi.spyOn(h.player, 'setRate');
+    const getTime = vi.spyOn(h.player, 'getTime').mockReturnValue(0);
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
+    for (let i = 0; i < 4; i++) h.advance(1000);
+    expect(seek).not.toHaveBeenCalled();
+    expect(setRate.mock.calls.every(([rate]) => rate === 1)).toBe(true);
+
+    // Started 4 s behind: the next check corrects it with one hard seek.
+    ready = true;
+    getTime.mockRestore();
+    h.player.seek(0);
+    seek.mockClear();
+    h.advance(1000);
+    expect(seek).toHaveBeenCalledOnce();
+    expect(Math.abs(h.player.getTime() - (h.binding.expected() ?? 0))).toBeLessThan(0.5);
+  });
+
+  it('a new command while the video starts still reaches the player (held there)', () => {
+    const h = harness();
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
+    vi.spyOn(h.player, 'isReady').mockReturnValue(false);
+    r.patch({ currentTime: 40, updatedAt: h.server() + 1 });
+    expect(h.player.getTime()).toBeCloseTo(40, 2);
+  });
+
+  it('does not seek right after loading a new video (the cue carries the start)', () => {
+    const h = harness();
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
+    h.advance(30_000, false);
+    const seek = vi.spyOn(h.player, 'seek');
+    const load = vi.spyOn(h.player, 'load');
+    r.patch({ videoId: ID_B, currentTime: 0, updatedAt: h.server() });
+    expect(load).toHaveBeenCalledOnce();
+    expect(load.mock.calls[0]![0]).toBe(ID_B);
+    expect(load.mock.calls[0]![1]).toBeCloseTo(0, 2);
+    expect(seek).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a seek when the player does not offer the nudge rate', () => {
+    const h = harness();
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    h.player.supportedRates = [];
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
+    h.advance(1000);
+    // 1 s behind: a nudge-band drift.
+    h.player.seek(h.player.getTime() - 1);
+    const setRate = vi.spyOn(h.player, 'setRate');
+    const seek = vi.spyOn(h.player, 'seek');
+    h.advance(1000);
+    expect(setRate).not.toHaveBeenCalled();
+    expect(seek).toHaveBeenCalledOnce();
+    expect(h.player.state.rate).toBe(1);
+    expect(Math.abs(h.player.getTime() - (h.binding.expected() ?? 0))).toBeLessThan(0.5);
+  });
+});

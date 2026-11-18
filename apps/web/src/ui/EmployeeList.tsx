@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { EmployeeRoster } from './employeeRoster';
+import { color, font, hudPanel, space } from './tokens';
 
 /** Dev-only render counter read by e2e (`window.__officeListRenders`). */
 function countRender(): void {
@@ -19,20 +20,18 @@ export function EmployeeList({ roster }: { roster: EmployeeRoster }) {
     <section
       aria-label="Online employees"
       style={{
+        ...hudPanel,
         position: 'absolute',
-        top: 16,
-        right: 16,
+        top: space[4],
+        right: space[4],
         minWidth: 160,
         maxWidth: 240,
-        color: '#fff',
-        background: 'rgba(34,36,38,0.8)',
-        borderRadius: 8,
-        padding: '8px 12px',
-        font: '13px system-ui',
+        padding: `${space[2]} ${space[3]}`,
+        fontSize: font.sm,
         pointerEvents: 'none',
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>Online ({entries.length})</div>
+      <div style={{ fontWeight: font.bold, marginBottom: space[1] }}>Online ({entries.length})</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {entries.map((e) => (
           <li
@@ -40,9 +39,11 @@ export function EmployeeList({ roster }: { roster: EmployeeRoster }) {
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              gap: 12,
+              gap: space[3],
               padding: '2px 0',
-              opacity: e.connected ? 1 : 0.5,
+              // Disconnected rows are muted and italic (not faded, which would break contrast).
+              color: e.connected ? color.hudText : color.hudTextMuted,
+              fontStyle: e.connected ? 'normal' : 'italic',
             }}
           >
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -51,7 +52,7 @@ export function EmployeeList({ roster }: { roster: EmployeeRoster }) {
                 {e.isLocal ? `${e.name} (you)` : e.name}
               </span>
             </span>
-            <span data-testid="employee-label" style={{ opacity: 0.8 }}>
+            <span data-testid="employee-label" style={{ color: color.hudTextMuted }}>
               {e.label}
             </span>
           </li>

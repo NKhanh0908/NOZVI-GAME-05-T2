@@ -13,6 +13,8 @@ export type ReplicatedEmployee = {
   readonly seatId: string;
   /** False while the server holds a dropped employee's reservation; absent means true. */
   readonly connected?: boolean;
+  /** Running emote id ('' or absent = none; REQ-AVATAR-004). */
+  readonly emote?: string;
 };
 
 /** Add / remove / change notifications for `room.state.employees`; each returns an unsubscribe. */

@@ -1,13 +1,21 @@
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
-import { BALANCE, MSG, officeLayout, type AvatarId, type IntentMessage } from '@office/protocol';
+import {
+  BALANCE,
+  MSG,
+  officeLayout,
+  type AvatarId,
+  type EmoteId,
+  type IntentMessage,
+} from '@office/protocol';
 import { CameraRig } from './camera';
 import { fadeOpacity } from './cameraMath';
 import { KeyboardInput } from './input';
 import { Player } from './player';
 import { setupLighting } from './lighting';
 import { buildRoom } from './room';
-import { loadFurniture } from './assets/loadFurniture';
+import { renderQuality, type RenderQuality } from './renderQuality';
+import { loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
 import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
 import { Nameplate } from './hud/Nameplate';
@@ -34,6 +42,8 @@ export class Game {
   /** alpha: the TV occluder clears to transparent so the CSS3D layer below shows through. */
   readonly renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   private readonly labelRenderer = new CSS2DRenderer();
+  /** T-1146: `e2e` in Playwright builds; later Phase 4.1 effects check it. */
+  readonly renderQuality: RenderQuality = renderQuality(import.meta.env);
   /** REQ-TV-001: WebGL bezel and occluder, plus the CSS3D layer holding the screen element. */
   readonly tvScreen = new TvScreen(officeLayout);
   readonly tvLayer = new TvCssLayer(this.tvScreen);
@@ -80,7 +90,7 @@ export class Game {
   private readonly rig: CameraRig;
   private readonly debugHook: unknown;
   private readonly disposeLighting: () => void;
-  private furniture: Awaited<ReturnType<typeof loadFurniture>> | undefined;
+  private furniture: FurnitureHandle | undefined;
   private disposed = false;
   /** Disconnects local prediction from the room (inputs out, patches in). */
   private unbindPrediction: () => void;
@@ -134,6 +144,7 @@ export class Game {
       if (o.userData.occluder) occluders.push(o);
     });
     void loadFurniture(office, officeLayout).then((result) => {
+      if (this.disposed) return result.dispose();
       this.furniture = result;
       occluders.length = 0;
       office.updateMatrixWorld(true);
@@ -178,8 +189,14 @@ export class Game {
           if (p.pitch !== undefined) this.rig.pitch = p.pitch;
         },
         getDrawCalls: () => this.measureDrawCalls(),
+        getRenderQuality: () => this.renderQuality,
         isLightingReady: () => lightingReady,
-        getFurniture: () => this.furniture,
+        getFurniture: () =>
+          this.furniture && {
+            loaded: this.furniture.loaded,
+            failed: this.furniture.failed,
+            instancedMeshes: this.furniture.instancedMeshes,
+          },
         getActivity: () => this.player.activity,
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
@@ -190,6 +207,8 @@ export class Game {
           this.rig.yaw = yaw;
         },
         avatarOk: () => this.player.viewFinite(),
+        getTyping: () => this.player.typing,
+        getEmote: () => this.player.emote,
         getRemotes: () => this.remotes.list(),
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
@@ -279,9 +298,23 @@ export class Game {
     this.tvLayer.container.style.pointerEvents = open ? 'auto' : 'none';
     this.renderer.domElement.style.pointerEvents = open ? 'none' : '';
     if (open) return;
+    this.focusGame();
+  }
+
+  /** Gives keyboard focus back to the game canvas (TV Close, emote menu closed). */
+  focusGame(): void {
     const active = document.activeElement;
     if (active instanceof HTMLElement && active !== document.body) active.blur();
     this.renderer.domElement.focus({ preventScroll: true });
+  }
+
+  /** REQ-AVATAR-004 (T-1222): the emote menu's request; the server decides. */
+  emote(emote: EmoteId): boolean {
+    return this.controller.emote(emote);
+  }
+
+  canEmote(emote: EmoteId): boolean {
+    return this.controller.canEmote(emote);
   }
 
   /** Renders two frames: one with the shadow pass, one reusing the shadow map (main pass only). */
@@ -330,6 +363,7 @@ export class Game {
     this.input.dispose();
     window.removeEventListener('keydown', this.keydown);
     this.rig.dispose();
+    this.furniture?.dispose();
     this.remotes.dispose();
     this.unbindBoard();
     this.roster.dispose();
