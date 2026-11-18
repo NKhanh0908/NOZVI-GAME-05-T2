@@ -1,6 +1,7 @@
 export * from './version';
 export * from './balance';
 export * from './layout/layout';
+export * from './layout/decor';
 export * from './collision';
 export * from './movement';
 export * from './identity';

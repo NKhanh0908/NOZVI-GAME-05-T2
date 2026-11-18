@@ -10,7 +10,10 @@ const cache = new Map<string, Promise<THREE.Group>>();
 function load(file: string): Promise<THREE.Group> {
   let promise = cache.get(file);
   if (!promise) {
-    promise = loader.loadAsync(`/assets/furniture/${file}`).then((gltf) => gltf.scene);
+    // A bare file name is a furniture model; `food/mug.glb` style paths name another pack
+    // folder under /assets (T-1158), which keeps relative texture paths working.
+    const url = file.includes('/') ? `/assets/${file}` : `/assets/furniture/${file}`;
+    promise = loader.loadAsync(url).then((gltf) => gltf.scene);
     cache.set(file, promise);
   }
   return promise;
@@ -37,6 +40,8 @@ export type FurniturePlacement = {
   file: string;
   rotY: number;
   standalone?: boolean;
+  /** Layout item whose palette box this placement removes (T-1158 pantry). */
+  replaces?: string;
 };
 
 /** Layout items that have a model in the manifest. Later desk props add their own placements. */
@@ -187,6 +192,8 @@ export async function loadFurniture(
       for (const p of present) {
         const box = p.standalone ? undefined : room.getObjectByName(p.box.id);
         if (box) room.remove(box);
+        const replaced = p.replaces ? room.getObjectByName(p.replaces) : undefined;
+        if (replaced) room.remove(replaced);
       }
       for (const object of objects) room.add(object);
       added.push(...objects);

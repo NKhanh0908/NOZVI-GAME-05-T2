@@ -3,6 +3,7 @@ import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import {
   BALANCE,
   MSG,
+  officeDecor,
   officeLayout,
   type AvatarId,
   type EmoteId,
@@ -17,6 +18,8 @@ import { createFrameRenderer, type FrameRenderer } from './postProcessing';
 import { buildRoom } from './room';
 import { renderQuality, type RenderQuality } from './renderQuality';
 import { deskProps } from './assets/deskProps';
+import { decorPlacements } from './assets/decorPlacements';
+import { WallClockView } from './wallClock';
 import { furniturePlacements, loadFurniture, type FurnitureHandle } from './assets/loadFurniture';
 import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
@@ -95,6 +98,8 @@ export class Game {
   /** T-1150: composer (bloom, MSAA) in `high` quality, direct rendering in `e2e`. */
   private readonly frame: FrameRenderer;
   private furniture: FurnitureHandle | undefined;
+  /** T-1158: procedural wall clock showing the local time. */
+  private readonly clock = new WallClockView(officeDecor.clock);
   private disposed = false;
   /** Disconnects local prediction from the room (inputs out, patches in). */
   private unbindPrediction: () => void;
@@ -152,7 +157,10 @@ export class Game {
     const placements = [
       ...furniturePlacements(officeLayout),
       ...deskProps(officeLayout).map((p) => p.placement),
+      // T-1158: pantry cabinets and coffee machine, cups, rugs, pillows, plants, books.
+      ...decorPlacements(officeDecor),
     ];
+    office.add(this.clock.group);
     void loadFurniture(office, officeLayout, placements).then((result) => {
       if (this.disposed) return result.dispose();
       this.furniture = result;
@@ -212,6 +220,8 @@ export class Game {
             models: this.furniture.models,
           },
         /** T-1152: the props drawn on one desk, with the model each one uses. */
+        /** T-1158: hand angles drawn by the wall clock (radians, clockwise from 12). */
+        getClock: () => this.clock.angles,
         getDeskProps: (deskId: string) =>
           deskProps(officeLayout)
             .filter((p) => p.deskId === deskId)
@@ -376,6 +386,7 @@ export class Game {
       this.onFrame?.(dt);
       this.remotes.update(dt);
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
+      this.clock.update(new Date());
       this.frame.render();
       this.labelRenderer.render(this.scene, this.camera);
       this.tvLayer.render(this.camera);
@@ -400,6 +411,7 @@ export class Game {
     this.resizeObserver.disconnect();
     this.disposeLighting();
     this.frame.dispose();
+    this.clock.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();

@@ -2,7 +2,7 @@ export const FURNITURE: Record<string, string> = {
   desk: 'desk.glb',
   chair: 'chairDesk.glb',
   fridge: 'kitchenFridge.glb',
-  countertop: 'kitchenCabinet.glb',
+  // countertop: drawn from decor (base + upper cabinets, coffee machine), T-1158.
   water_dispenser: 'kitchenCabinet.glb',
   storage_cabinet: 'bookcaseClosedDoors.glb',
   lockers: 'bookcaseClosedDoors.glb',
