@@ -66,6 +66,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Fixed
 
+- TV stuck `playing` after the controller left (T-1376, OQ-022): while `controllerSessionId` is null, any client whose player reaches the video end reports it as a `pause` (also a client already holding the end when the controller leaves); `TvSim` ignores a `pause` on a paused TV, so duplicate reports keep the first end stamp. Late joiners are no longer seeked past the end. Unit tests in `apps/web/test/tv/tvBinding.test.ts` and `apps/server/test/tv.test.ts`.
+
 - TV IFrame error 5 on a pasted video (T-1405, owner confirmation pending): the YouTube adapter sends only cue, play, pause, stop and mute until the cued video has started; seeks made before that only move the start position (latest wins, applied once), rate changes are held, seeks are clamped to `[0, duration - 0.5 s]` and non-finite values dropped, rates the video does not list in `getAvailablePlaybackRates()` are refused, and `origin` / `enablejsapi` are passed. `TvBinding` runs the drift sync only while the player reports `isReady()`, does not seek right after loading a new video, and turns an unsupported nudge rate into a seek (seek-only fallback, T-1374). DEV-only TV debug log (`apps/web/src/tv/tvDebugLog.ts`): every adapter call, IFrame call, state change, error code, available rates and duration go to `window.__tvLog` and `console.debug('[tv]', …)`.
 
 - TV late join (T-1143): the TV binding waits for the first full room state, so a late joiner no longer takes the schema defaults as a snapshot and seeks seconds behind.

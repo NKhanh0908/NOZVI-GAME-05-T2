@@ -76,8 +76,11 @@ const commandKey = (tv: TvSnapshot) => `${tv.updatedAt}|${tv.status}|${tv.videoI
  * Clock offset (OQ-023): every fresh `updatedAt` seen after the first snapshot is a sample
  * for {@link ClockOffsetEstimator}; until then the local clock is taken as server time.
  *
- * Video end (OQ-022): only the controller's client reports it, as a `pause` (the server
- * stamps the end position); other clients hold the last frame until that arrives.
+ * Video end (OQ-022, T-1376): the controller's client reports it as a `pause` (the server
+ * stamps the end position); other clients hold the last frame until that arrives. When no
+ * controller is set (it left the room), every client that reaches the end reports it; the
+ * server ignores a `pause` on a paused TV, so the first report wins. A client already
+ * holding the end when the controller leaves reports it then.
  *
  * Video errors (REQ-TV-009): an `onError` from the local player marks the loaded video as
  * failed for this session. The player stops, the view carries the error while the shared
@@ -255,7 +258,15 @@ export class TvBinding implements TvControls, TvViewSource {
   /** One decoded snapshot; `fresh` marks patches after the first one of this room. */
   private receive(tv: TvSnapshot, fresh: boolean): void {
     const key = commandKey(tv);
-    if (key === this.key) return;
+    if (key === this.key) {
+      // Not a new command, but the controller may have left (T-1376).
+      const wasControlled = this.tv.controllerSessionId !== null;
+      this.tv = tv;
+      if (wasControlled && tv.controllerSessionId === null && this.endedAt === key) {
+        this.reportEnd();
+      }
+      return;
+    }
     if (fresh && tv.updatedAt > 0 && tv.updatedAt !== this.tv.updatedAt) {
       this.clock.addSample(tv.updatedAt, this.now());
     }
@@ -361,14 +372,22 @@ export class TvBinding implements TvControls, TvViewSource {
     for (const l of [...this.errorListeners]) l(error);
   }
 
-  /** The local player reached the end: hold the frame; the controller reports it. */
+  /**
+   * The local player reached the end: hold the frame. The controller reports it, or any
+   * client while no controller is set (T-1376).
+   */
   private ended(): void {
     if (this.tv.status !== 'playing' || this.loaded !== this.tv.videoId) return;
+    if (this.endedAt === this.key) return;
     this.endedAt = this.key;
     this.player.setRate(1);
-    if (this.room && this.tv.controllerSessionId === this.room.sessionId) {
-      this.send({ type: 'pause' });
-    }
+    this.reportEnd();
+  }
+
+  private reportEnd(): void {
+    if (this.tv.status !== 'playing' || !this.room) return;
+    const controller = this.tv.controllerSessionId;
+    if (controller === null || controller === this.room.sessionId) this.send({ type: 'pause' });
   }
 
   private send(cmd: TvCommand): void {

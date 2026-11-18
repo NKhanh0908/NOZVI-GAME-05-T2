@@ -36,7 +36,7 @@
 - A pure `TvSim` (no Colyseus import, controlled clock) applies commands in room order, one at a time (REQ-TV-005). Every employee may control the TV. The server sets `updatedAt` and `controllerSessionId` and computes `currentTime` on pause or seek from the elapsed play time.
 - Rate limit: 5 commands per 10 s per client. Excess commands are dropped and answered with a typed `tv_rate_limited` notice.
 - `stop` returns to `idle` with `videoId = null`. A local close sends nothing.
-- When the controller leaves, playback continues and `controllerSessionId` becomes null (default for OQ-022). The server cannot see the end of a video, so `ended` is reported by the controller's client as a `pause` at the end time. No new status value is added.
+- When the controller leaves, playback continues and `controllerSessionId` becomes null (default for OQ-022). The server cannot see the end of a video, so `ended` is reported by the controller's client as a `pause` at the end time; while no controller is set, any client reports it and the server ignores a duplicate `pause` (T-1376). No new status value is added.
 
 ### 3.3 Client (`apps/web`)
 

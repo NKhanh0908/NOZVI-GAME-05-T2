@@ -124,4 +124,24 @@ describe('TvSim (REQ-TV-004, REQ-TV-005)', () => {
     sim.apply('b', { type: 'pause' });
     expect(tv).toMatchObject({ status: 'paused', currentTime: 4, controllerSessionId: 'b' });
   });
+
+  it('two clients reporting the video end leave a single paused state at the end (T-1376)', () => {
+    const { tv, sim, advance, now } = setup();
+    sim.apply('a', { type: 'load', videoId: ID_A });
+    sim.apply('a', { type: 'seek', time: 118 });
+    sim.leave('a');
+    advance(2);
+    const endedAt = now();
+    expect(sim.apply('b', { type: 'pause' })).toBe(true);
+    advance(0.3);
+    // The second report of the same end is a duplicate and changes nothing.
+    expect(sim.apply('c', { type: 'pause' })).toBe(false);
+    expect(tv).toEqual({
+      videoId: ID_A,
+      status: 'paused',
+      currentTime: 120,
+      updatedAt: endedAt,
+      controllerSessionId: 'b',
+    });
+  });
 });

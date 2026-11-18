@@ -32,7 +32,11 @@ export class TvSim {
 
   /**
    * Applies one validated command from `sessionId`. Returns false when it does not apply
-   * (play, pause or seek while idle) and leaves the state untouched.
+   * (play, pause or seek while idle, or a pause while already paused) and leaves the state
+   * untouched.
+   *
+   * T-1376: a `pause` on a paused TV is a duplicate (several clients may report the same
+   * video end once the controller has left), so it keeps the first stamp and controller.
    */
   apply(sessionId: string, cmd: TvCommand): boolean {
     const at = this.now();
@@ -51,6 +55,7 @@ export class TvSim {
         this.write(sessionId, at, { status: 'playing', currentTime: this.positionAt(at) });
         return true;
       case 'pause':
+        if (tv.status === 'paused') return false;
         this.write(sessionId, at, { status: 'paused', currentTime: this.positionAt(at) });
         return true;
       case 'seek':

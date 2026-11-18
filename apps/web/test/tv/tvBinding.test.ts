@@ -354,6 +354,46 @@ describe('TvBinding drift and clock (REQ-TV-006, OQ-023)', () => {
     expect(r2.sent).toEqual([]);
   });
 
+  it('with no controller (it left), any client reports the end as one pause (T-1376)', () => {
+    const h = harness();
+    const r = fakeRoom('other');
+    h.binding.attach(r.room);
+    r.patch({
+      videoId: ID_A,
+      status: 'playing',
+      currentTime: 118,
+      updatedAt: h.server(),
+      controllerSessionId: null,
+    });
+    h.advance(2000);
+    h.player.emitEnded();
+    h.player.emitEnded();
+    h.advance(3000);
+    expect(r.sent).toEqual([{ type: 'pause' }]);
+  });
+
+  it('a client holding the end reports it once the controller leaves (T-1376)', () => {
+    const h = harness();
+    const r = fakeRoom('other');
+    h.binding.attach(r.room);
+    r.patch({
+      videoId: ID_A,
+      status: 'playing',
+      currentTime: 118,
+      updatedAt: h.server(),
+      controllerSessionId: 'me',
+    });
+    h.advance(2000);
+    h.player.emitEnded();
+    expect(r.sent).toEqual([]);
+    r.patch({ controllerSessionId: null });
+    expect(r.sent).toEqual([{ type: 'pause' }]);
+    // The paused state that follows is a new command; nothing else is sent.
+    r.patch({ status: 'paused', currentTime: 120, updatedAt: h.server() });
+    r.patch({ controllerSessionId: 'other' });
+    expect(r.sent).toEqual([{ type: 'pause' }]);
+  });
+
   it('dispose stops the timer and the room listeners', () => {
     const h = harness();
     const r = fakeRoom();
