@@ -13,6 +13,7 @@ import { fadeOpacity } from './cameraMath';
 import { KeyboardInput } from './input';
 import { Player } from './player';
 import { setupLighting } from './lighting';
+import { createFrameRenderer, type FrameRenderer } from './postProcessing';
 import { buildRoom } from './room';
 import { renderQuality, type RenderQuality } from './renderQuality';
 import { deskProps } from './assets/deskProps';
@@ -91,6 +92,8 @@ export class Game {
   private readonly rig: CameraRig;
   private readonly debugHook: unknown;
   private readonly disposeLighting: () => void;
+  /** T-1150: composer (bloom, MSAA) in `high` quality, direct rendering in `e2e`. */
+  private readonly frame: FrameRenderer;
   private furniture: FurnitureHandle | undefined;
   private disposed = false;
   /** Disconnects local prediction from the room (inputs out, patches in). */
@@ -178,6 +181,7 @@ export class Game {
       this.renderer,
       this.scene,
       new THREE.Box3().setFromObject(office),
+      officeLayout.room,
     );
     this.disposeLighting = lighting.dispose;
     if (import.meta.env.DEV) {
@@ -197,6 +201,8 @@ export class Game {
         },
         getDrawCalls: () => this.measureDrawCalls(),
         getRenderQuality: () => this.renderQuality,
+        /** T-1150: true when frames go through the post-processing composer. */
+        isComposed: () => this.frame.composed,
         isLightingReady: () => lightingReady,
         getFurniture: () =>
           this.furniture && {
@@ -241,6 +247,7 @@ export class Game {
       (window as unknown as { __office: unknown }).__office = this.debugHook;
     }
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.frame = createFrameRenderer(this.renderer, this.scene, this.camera, this.renderQuality);
     // Stacking: CSS3D TV layer (0) under the WebGL canvas (1) under the labels (2).
     this.renderer.domElement.style.position = 'relative';
     this.renderer.domElement.style.zIndex = '1';
@@ -302,6 +309,7 @@ export class Game {
     const { clientWidth: w, clientHeight: h } = this.host;
     if (w === 0 || h === 0) return;
     this.renderer.setSize(w, h);
+    this.frame.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.tvLayer.setSize(w, h);
     this.camera.aspect = w / h;
@@ -368,7 +376,7 @@ export class Game {
       this.onFrame?.(dt);
       this.remotes.update(dt);
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
-      this.renderer.render(this.scene, this.camera);
+      this.frame.render();
       this.labelRenderer.render(this.scene, this.camera);
       this.tvLayer.render(this.camera);
     });
@@ -391,6 +399,7 @@ export class Game {
     if (this.debugHook !== undefined && w.__office === this.debugHook) delete w.__office;
     this.resizeObserver.disconnect();
     this.disposeLighting();
+    this.frame.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
