@@ -17,6 +17,8 @@ type Office = {
   getEmote(): string;
   getActivity(): string;
   getDrawCalls(): DrawCalls;
+  isLightingReady(): boolean;
+  getFurniture(): unknown;
   setPose(p: { x: number; z: number; heading: number; yaw?: number; pitch?: number }): void;
 };
 type Win = { __office: Office };
@@ -31,6 +33,16 @@ async function joinAs(browser: Browser, name: string, code: string) {
   await page.getByRole('button', { name: 'Join Office' }).click();
   await page.waitForFunction(
     () => 'getRemotes' in ((window as unknown as { __office?: object }).__office ?? {}),
+  );
+  // The light probe and the furniture arrive asynchronously; the first frame after each
+  // recompiles every material, which stalls software WebGL for seconds (longer than an
+  // emote). Let both land and render before the trace starts, as the visual spec does.
+  await page.waitForFunction(() => {
+    const o = (window as unknown as Win).__office;
+    return o.isLightingReady() && o.getFurniture() !== undefined;
+  });
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
   );
   await page
     .locator('canvas')
