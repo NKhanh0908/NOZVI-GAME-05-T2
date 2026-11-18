@@ -18,6 +18,17 @@ export interface TvPlayer {
   stop(): void;
   /** Playback rate; 1 is normal speed, the drift sync nudges around it. */
   setRate(rate: number): void;
+  /**
+   * Whether the player can play at `rate` (1 always). The binding falls back to a seek
+   * when a drift nudge rate is not supported (T-1405, T-1374).
+   */
+  supportsRate(rate: number): boolean;
+  /**
+   * True once the loaded video has started (playing or paused) and `getTime` reports its
+   * real position; false while nothing is loaded, after `stop`, and from `load` until the
+   * video starts. The drift sync only runs while this is true (T-1405).
+   */
+  isReady(): boolean;
   getTime(): number;
   /** Video length in seconds, or null while unknown (nothing loaded, metadata pending). */
   getDuration(): number | null;
@@ -72,6 +83,8 @@ export class FakeTvPlayer implements TvPlayer {
   private readonly errors = new Listeners<[number]>();
   private readonly ended = new Listeners<[]>();
   private readonly label: HTMLElement | null;
+  /** Test control: rates other than 1 the fake accepts; null accepts every rate. */
+  supportedRates: number[] | null = null;
 
   constructor(
     container: HTMLElement | null = null,
@@ -123,6 +136,13 @@ export class FakeTvPlayer implements TvPlayer {
   setRate(rate: number): void {
     this.rebase(this.getTime());
     this.rate = rate;
+  }
+  supportsRate(rate: number): boolean {
+    return rate === 1 || this.supportedRates === null || this.supportedRates.includes(rate);
+  }
+  /** The fake reports its position as soon as a video is loaded. */
+  isReady(): boolean {
+    return this.videoId !== null;
   }
   getTime(): number {
     if (!this.playing) return this.baseTime;
