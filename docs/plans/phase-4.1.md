@@ -95,6 +95,37 @@ Repeat runs can differ by a few calls in a view (the same session's `visual.spec
 - Room shell: window frames with glass, skirting boards, ceiling panels, real door models for the main and utility doors, an air-conditioner model, wall signage.
 - Small details: desk clutter, pantry cups and sink items, a wall clock showing the local time, a rug in the entertainment corner, books on shelves, plant variety. All from CC0 packs, credited in `apps/web/public/assets/CREDITS.md`.
 
+**Task 2 result (T-1147, 2026-11-18).** The owner-approved models (DECISIONS 2026-11-17) were copied unchanged from the official Kenney zips the owner committed to `dev` in 6c15589; none is placed in the room yet (tasks 6, 7, 10, 14). Manifest constants: `FURNITURE_PROPS`, `FOOD`, `FOOD_DIR` in `apps/web/src/game/assets/furnitureManifest.ts`; `apps/web/test/furnitureManifest.test.ts` checks every manifest entry is an existing glTF 2.0 binary whose external resources exist. The 17 models already in the repo are byte-identical (SHA-256) to the Furniture Kit zip. Triangles and primitives come from the GLB JSON (index count / 3, triangle mode); every file is glTF 2.0.
+
+| File (`apps/web/public/assets/`)  | Pack          | Bytes  | Triangles | Primitives |
+| --------------------------------- | ------------- | ------ | --------- | ---------- |
+| `furniture/computerKeyboard.glb`  | Furniture Kit | 3,476  | 32        | 2          |
+| `furniture/computerMouse.glb`     | Furniture Kit | 5,868  | 71        | 1          |
+| `furniture/lampSquareTable.glb`   | Furniture Kit | 5,624  | 60        | 2          |
+| `furniture/lampRoundTable.glb`    | Furniture Kit | 6,604  | 76        | 2          |
+| `furniture/lampSquareCeiling.glb` | Furniture Kit | 5,628  | 60        | 2          |
+| `furniture/books.glb`             | Furniture Kit | 6,864  | 62        | 4          |
+| `furniture/plantSmall1.glb`       | Furniture Kit | 8,224  | 102       | 2          |
+| `furniture/plantSmall2.glb`       | Furniture Kit | 12,996 | 158       | 2          |
+| `furniture/plantSmall3.glb`       | Furniture Kit | 8,424  | 98        | 2          |
+| `furniture/rugRectangle.glb`      | Furniture Kit | 3,188  | 28        | 2          |
+| `furniture/rugRounded.glb`        | Furniture Kit | 10,876 | 204       | 2          |
+| `furniture/doorwayFront.glb`      | Furniture Kit | 13,016 | 156       | 4          |
+| `furniture/kitchenSink.glb`       | Furniture Kit | 23,480 | 318       | 8          |
+| `furniture/kitchenMicrowave.glb`  | Furniture Kit | 11,248 | 152       | 6          |
+| `furniture/toaster.glb`           | Furniture Kit | 14,924 | 220       | 2          |
+| `furniture/trashcan.glb`          | Furniture Kit | 6,452  | 68        | 2          |
+| `furniture/laptop.glb`            | Furniture Kit | 5,540  | 68        | 3          |
+| `furniture/radio.glb`             | Furniture Kit | 25,020 | 432       | 3          |
+| `furniture/bear.glb`              | Furniture Kit | 11,884 | 134       | 3          |
+| `furniture/speakerSmall.glb`      | Furniture Kit | 15,244 | 220       | 2          |
+| `food/cup-coffee.glb`             | Food Kit      | 7,872  | 108       | 1          |
+| `food/mug.glb`                    | Food Kit      | 20,236 | 232       | 1          |
+| `food/glass.glb`                  | Food Kit      | 4,216  | 44        | 1          |
+| `food/Textures/colormap.png`      | Food Kit      | 10,715 | —         | —          |
+
+Food Kit models use one textured primitive each and reference `Textures/colormap.png` (512 × 512) relative to their folder, so they stay in `food/`; Furniture Kit models are untextured with embedded buffers. Per desk, keyboard + mouse + table lamp adds about 170 triangles and 5 primitives before instancing (task 3).
+
 ### 3.3 Desks and the working desktop
 
 - Every desk shows its monitor, keyboard, mouse, lamp, stationery and decorative object from the layout data.
