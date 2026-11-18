@@ -121,6 +121,41 @@ describe('RemoteAvatars (REQ-NET-004, REQ-UI-001)', () => {
     expect(t.scene.getObjectByName('remote:a')).toBeDefined();
   });
 
+  it('T-1161: remote avatars cast no real shadow and draw one shared blob shadow', async () => {
+    const t = setup();
+    t.source.add!('a', t.employee('Ann'));
+    t.source.add!('b', t.employee('Bo', 2));
+    // The capsule shown while the model loads does not cast a shadow either.
+    const casters = (root: THREE.Object3D) => {
+      let n = 0;
+      root.traverse((o) => (n += o.castShadow ? 1 : 0));
+      return n;
+    };
+    expect(casters(t.scene)).toBe(0);
+    const part = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    part.castShadow = true;
+    t.loadView.mockImplementationOnce(async () => {
+      const v = fakeView();
+      v.root.add(part);
+      t.views.push(v);
+      return v;
+    });
+    t.source.add!('c', t.employee('Cy', 4));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(part.castShadow).toBe(false);
+    expect(casters(t.scene)).toBe(0);
+    const blobs: THREE.Mesh[] = [];
+    t.scene.traverse((o) => o.name === 'blob-shadow' && blobs.push(o as THREE.Mesh));
+    expect(blobs).toHaveLength(3);
+    expect(new Set(blobs.map((b) => b.geometry)).size).toBe(1);
+    expect(new Set(blobs.map((b) => b.material)).size).toBe(1);
+    t.source.removeHandler!('a');
+    expect(t.scene.getObjectByName('remote:a')).toBeUndefined();
+    // The shared blob geometry survives a remote leaving.
+    expect(blobs[1]!.geometry.getAttribute('position')).toBeDefined();
+  });
+
   it('places the avatar from the interpolation sample and animates from activity', async () => {
     const t = setup();
     const e = t.employee('Bo');
@@ -191,7 +226,9 @@ describe('RemoteAvatars (REQ-NET-004, REQ-UI-001)', () => {
     const e = t.employee('Cy');
     t.source.add!('c', e);
     const group = t.scene.getObjectByName('remote:c')!;
-    const capsule = group.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh);
+    const capsule = group.children.filter(
+      (o): o is THREE.Mesh => o instanceof THREE.Mesh && o.name !== 'blob-shadow',
+    );
     expect(capsule).toHaveLength(2);
     const geometrySpies = capsule.map((m) => vi.spyOn(m.geometry, 'dispose'));
     const materialSpies = capsule.map((m) => vi.spyOn(m.material as THREE.Material, 'dispose'));

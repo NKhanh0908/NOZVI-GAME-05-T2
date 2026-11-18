@@ -55,6 +55,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Changed
 
+- Avatar render cost (T-1161): each avatar GLB is merged at load into one skinned mesh with one vertex-coloured material (`apps/web/src/game/avatar/mergeSkinned.ts`; 10 primitives -> 1, look unchanged); remote avatars no longer cast real shadows and draw a shared soft blob shadow instead. Per remote avatar 20 -> 2 draw calls; 10 employees at the spawn view 285 -> 105 calls and 149.5k -> 90.0k triangles (headless SwiftShader). The local avatar keeps its real shadow (20 -> 2 calls as well).
+
 - Instanced static furniture (T-1148, plan §3.1.2): `loadFurniture` batches placements by model and draws a repeated model as one `InstancedMesh` per part (29 models → 19 instanced meshes + 7 single models); only layout boxes of at least 0.05 m³ cast shadows (all current furniture, so desk props added later only receive); the camera hides an occluding instance through `game/occluderHider.ts`; `loadFurniture` returns a disposable handle and `getFurniture()` also reports `instancedMeshes`. Spawn view 174 → 105 draw calls with one employee, 354 → 285 with ten; screenshots unchanged. Unit tests in `test/furnitureInstancing.test.ts` and `test/fit.test.ts`.
 - The G key sends the `wave` emote instead of the Phase 2 `wave` intent (T-1222); seated employees can wave; `e2e/seats.spec.ts` checks the replicated emote instead of the `waving` activity.
 - Docs for Phase 3 (T-1041): ARCHITECTURE §5 (server packages, name length 1 to 20, rate limits per SPEC, fixed-step input), DECISIONS (fixed-step model and owner-confirmed plan §6 defaults; network profile), CODEMAP, STATUS, README commands.

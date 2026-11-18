@@ -40,6 +40,8 @@ Phase 4.1 UI tokens (T-1159): `apps/web/src/ui/tokens.css` is the only place col
 
 Phase 4.1 avatar overlays (T-1219): `apps/web/src/game/avatar/overlays.ts` holds procedural bone overlays applied by `AvatarView.update` after the mixer (`findRig`, `aimBone`, `applyTyping` while `working`; tunables `BALANCE.avatar`). Tests: `apps/web/test/avatarClips.test.ts`, e2e `typing.spec.ts`.
 
+Avatar render cost (T-1161): `apps/web/src/game/avatar/mergeSkinned.ts` merges an avatar GLB's skinned parts into one vertex-coloured skinned mesh (called from `AvatarView` `loadTemplate`); `RemoteAvatars.createBlobShadow` draws the shared blob shadow and remote avatars cast no real shadow. Tests: `apps/web/test/mergeSkinned.test.ts`, `remoteAvatars.test.ts`; numbers from e2e `renderBaseline.spec.ts`.
+
 Phase 4.1 emotes (T-1222): `apps/web/src/ui/EmoteMenu.tsx` (menu, rendered by `App.tsx`; `Game.emote` / `canEmote` / `focusGame`) → `InteractionController.emote` (G = `wave` emote) → server; playback from the replicated `emote` in `AvatarView.setEmote` (`EMOTE_SOURCE`: `Dance_Loop` clip, wave arm override, overlays in `avatar/overlays.ts`) for `Player` and `RemoteAvatars`. Tests: `apps/web/test/emoteMenu.test.tsx`, `avatarClips.test.ts`, `interactionController.test.ts`, e2e `emote.spec.ts`, `seats.spec.ts` (G wave).
 
 Assets: `apps/web/public/assets/` (`furniture/`, `food/` with `Textures/`, `avatars/`, `anim/`; licences in `CREDITS.md`); file names in `apps/web/src/game/assets/furnitureManifest.ts` (`FURNITURE` placed by `loadFurniture.ts`; `FURNITURE_PROPS`, `FOOD` not placed yet). Tests: `apps/web/test/furnitureManifest.test.ts` (every entry exists and is glTF 2.0 with its resources).

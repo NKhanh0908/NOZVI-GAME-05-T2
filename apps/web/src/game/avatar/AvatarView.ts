@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { BALANCE, type Activity, type AvatarId, type EmoteId } from '@office/protocol';
+import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
 import {
   EMOTE_OVERLAYS,
@@ -80,6 +81,9 @@ async function loadTemplate(avatarId: AvatarId): Promise<Template> {
     // The exported skin bounds do not follow animated bones (also disabled in the PoC).
     if ((o as THREE.SkinnedMesh).isSkinnedMesh) o.frustumCulled = false;
   });
+  // T-1161: one skinned mesh per avatar (1 draw call per pass instead of 10); the parts share
+  // one skeleton and differ only in colour. Unmergeable assets stay as they are.
+  mergeSkinnedMeshes(gltf.scene);
   return { scene: gltf.scene, clips };
 }
 
