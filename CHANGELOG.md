@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Added
 
+- Phase 4.1 CC0 assets (T-1147): 20 Kenney Furniture Kit 2.0 models (keyboard, mouse, table and ceiling lamps, books, small plants, rugs, front doorway, kitchen sink, microwave, toaster, trashcan, laptop, radio, bear, small speaker) in `apps/web/public/assets/furniture/` and Kenney Food Kit 2.0 `cup-coffee`, `mug`, `glass` with `Textures/colormap.png` in `assets/food/`, from the official zips the owner committed to `dev`; credited in `assets/CREDITS.md`, listed as `FURNITURE_PROPS` / `FOOD` in `furnitureManifest.ts` (not placed yet); `test/furnitureManifest.test.ts` checks every manifest entry is an existing glTF 2.0 file with its resources.
+
 - Emote menu and playback (T-1222, REQ-AVATAR-004): `apps/web/src/ui/EmoteMenu.tsx` (Emotes button and menu with the five protocol emotes, keyboard reachable, Escape closes, focus back to the game) sends the `emote` intent; `AvatarView.setEmote` plays `dance` (UAL1 `Dance_Loop`), `wave` (arm override) and `think` / `laugh` / `stretch` overlays (`BALANCE.avatar.emote`) on local and remote avatars from the replicated `emote`; dev hook `getEmote()` and `emote` in `getRemotes()`; component test `emoteMenu.test.tsx`, unit tests on both presets, two-page `e2e/emote.spec.ts`.
 
 - Typing while working (T-1219, REQ-AVATAR-002): a procedural forearm and hand overlay on the seated loop (`apps/web/src/game/avatar/overlays.ts`, `BALANCE.avatar.typing`) on local and remote avatars, blended over the 0.25 s activity cross-fade and derived from the replicated `activity`; sitting ↔ working keeps the seated loop's phase; dev hook `getTyping()` and `typing` in `getRemotes()`; unit tests on both presets and two-page `e2e/typing.spec.ts`.
