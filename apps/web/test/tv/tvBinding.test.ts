@@ -473,4 +473,36 @@ describe('TvBinding player readiness and rate fallback (T-1405)', () => {
     expect(h.player.state.rate).toBe(1);
     expect(Math.abs(h.player.getTime() - (h.binding.expected() ?? 0))).toBeLessThan(0.5);
   });
+
+  // T-1374: the real IFrame player usually lists only quarter-step rates.
+  const QUARTER_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+  function driftBy(rates: number[] | null, drift: number) {
+    const h = harness();
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    h.player.supportedRates = rates;
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
+    h.advance(TV_SYNC_INTERVAL_MS);
+    h.player.seek(h.player.getTime() - drift);
+    const setRate = vi.spyOn(h.player, 'setRate');
+    const seek = vi.spyOn(h.player, 'seek');
+    h.advance(TV_SYNC_INTERVAL_MS);
+    return { h, setRate, seek };
+  }
+
+  it('with only quarter-step rates, a 1.2 s drift is corrected by a seek, not a nudge (T-1374)', () => {
+    const { h, setRate, seek } = driftBy(QUARTER_RATES, 1.2);
+    expect(setRate).not.toHaveBeenCalled();
+    expect(seek).toHaveBeenCalledOnce();
+    expect(h.player.state.rate).toBe(1);
+    expect(Math.abs(h.player.getTime() - (h.binding.expected() ?? 0))).toBeLessThan(0.5);
+  });
+
+  it('with 0.95 / 1.05 available, a 1.2 s drift still nudges (T-1374)', () => {
+    const { h, setRate, seek } = driftBy([...QUARTER_RATES, 0.95, 1.05], 1.2);
+    expect(seek).not.toHaveBeenCalled();
+    expect(setRate).toHaveBeenCalledWith(expect.closeTo(1.05, 9));
+    expect(h.player.state.rate).toBeCloseTo(1.05, 9);
+  });
 });
