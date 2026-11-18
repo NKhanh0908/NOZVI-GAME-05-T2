@@ -67,12 +67,29 @@ it('shares cached loads, uses item rotation, and keeps boxes for failed or unmap
   const fridge = room.getObjectByName('fridge');
   const door = room.getObjectByName('door');
   const result = await loadFurniture(room, layout);
-  expect(result).toEqual({ loaded: 2, failed: ['fridge'] });
+  expect(result).toMatchObject({ loaded: 2, failed: ['fridge'], instancedMeshes: 1 });
   expect(load).toHaveBeenCalledTimes(2);
   expect(room.getObjectByName('fridge')).toBe(fridge);
   expect(room.getObjectByName('door')).toBe(door);
-  const desk = room.getObjectByName('desk_a')!;
-  expect(desk).toBeInstanceOf(THREE.Group);
-  expect(desk.children[0]!.children[0]!.rotation.y).toBeCloseTo(Math.PI / 2);
-  expect(room.getObjectByName('desk_b')!.children[0]!.children[0]!.rotation.y).toBe(0);
+  // Both desks use one model: a single InstancedMesh replaces their two boxes.
+  expect(room.getObjectByName('desk_a')).toBeUndefined();
+  expect(room.getObjectByName('desk_b')).toBeUndefined();
+  const instanced = room.children.filter((o) => (o as THREE.InstancedMesh).isInstancedMesh);
+  expect(instanced).toHaveLength(1);
+  const mesh = instanced[0] as THREE.InstancedMesh;
+  expect(mesh.count).toBe(2);
+  expect(mesh.userData.instanceIds).toEqual(['desk_a', 'desk_b']);
+  const rotationY = (index: number) => {
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(index, matrix);
+    return new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().extractRotation(matrix)).y;
+  };
+  expect(rotationY(0)).toBeCloseTo(Math.PI / 2);
+  expect(rotationY(1)).toBeCloseTo(0);
+  const disposed = vi.fn();
+  mesh.addEventListener('dispose', disposed);
+  result.dispose();
+  expect(disposed).toHaveBeenCalledTimes(1);
+  expect(mesh.parent).toBeNull();
+  expect(room.children).not.toContain(mesh);
 });

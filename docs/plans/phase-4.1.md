@@ -88,6 +88,22 @@ Repeat runs can differ by a few calls in a view (the same session's `visual.spec
 
 **Owner item:** FPS with ten employees on the owner's laptop for the current scene (the Phase 3 reading was about 55 FPS); not measurable in this container.
 
+#### 3.1.2 After instancing (task 3, T-1148, measured 2026-11-18 on `wt-instancing2`)
+
+`loadFurniture` groups placements by model file and shadow flag; a model placed more than once becomes one `InstancedMesh` per part (geometry + material), with each instance matrix equal to the world matrix `fitModel` gives that copy. 29 models load as 19 `InstancedMesh` objects (desk 3, chair 3, potted plant 3, kitchen cabinet 5, closed bookcase 5) plus 7 single models. Only layout boxes of at least 0.05 m³ cast shadows (`SHADOW_MIN_VOLUME`); every current furniture item is larger, so the picture is unchanged and only desk props and details added later stop casting. The camera hides an occluding instance by collapsing its matrix for one frame (`occluderHider.ts`). Collision is unchanged: it reads `office-layout.json` in `packages/protocol`, not the meshes. Same run conditions as the table above (SwiftShader, 1280×720, `e2e` quality, before numbers re-run on the same commit and machine).
+
+| View              | 1 employee: main / shadow / total (before) | Triangles (before) | 3 employees (before) | Triangles (before) | 10 employees (before) | Triangles (before) |
+| ----------------- | ------------------------------------------ | ------------------ | -------------------- | ------------------ | --------------------- | ------------------ |
+| 01-spawn          | 56 / 49 / 105 (174)                        | 30,128 (25,898)    | 76 / 69 / 145 (214)  | 56,664 (52,434)    | 146 / 139 / 285 (354) | 149,540 (145,310)  |
+| 02-pods           | 40 / 49 / 89 (172)                         | 29,304 (27,628)    | 60 / 69 / 129 (212)  | 55,840 (54,164)    | 130 / 139 / 269 (352) | 148,716 (147,040)  |
+| 03-tv-wall        | 46 / 49 / 95 (175)                         | 29,716 (27,018)    | 66 / 69 / 135 (215)  | 56,252 (53,554)    | 136 / 139 / 275 (355) | 149,128 (146,430)  |
+| 04-across-tv-wall | 35 / 49 / 84 (153)                         | 29,180 (24,524)    | 55 / 69 / 124 (193)  | 55,716 (51,060)    | 125 / 139 / 264 (333) | 148,592 (143,936)  |
+| 05-near-wall-fade | 49 / 49 / 98 (193)                         | 29,758 (29,358)    | 69 / 69 / 138 (233)  | 56,294 (55,894)    | 139 / 139 / 278 (373) | 149,170 (148,770)  |
+| 06-desk-side      | 57 / 49 / 106 (183)                        | 30,140 (26,520)    | 77 / 69 / 146 (223)  | 56,676 (53,056)    | 147 / 139 / 286 (363) | 149,552 (145,932)  |
+| 07-sofa-side      | 57 / 49 / 106 (187)                        | 30,140 (26,644)    | 77 / 69 / 146 (225)  | 56,676 (52,872)    | 147 / 139 / 286 (363) | 149,552 (145,720)  |
+
+Readings: total calls drop by 69 to 95 per view (the shadow pass from 104 to 49 with one employee). Triangles rise by up to about 4,700 because an `InstancedMesh` is culled as a whole: all eight desks are drawn when any is in view. Avatars still add about 10 main and 10 shadow calls each. Before / after screenshots of the seven views differ only in the avatar's idle-animation phase.
+
 ### 3.2 Visuals (CC0 only)
 
 - Materials: wood, metal, fabric and glass get distinct roughness and metalness values, and a PMREM environment map adds soft reflections on glass, metal and screens.
