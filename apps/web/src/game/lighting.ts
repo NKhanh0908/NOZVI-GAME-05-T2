@@ -1,19 +1,21 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
-import { BALANCE } from '@office/protocol';
+import { BALANCE, type OfficeLayout } from '@office/protocol';
 
 const R = BALANCE.rendering;
 
 /**
- * Configures colour output, tone mapping, image-based fill and the window sun. The sun's
- * orthographic shadow camera is fitted tightly around `bounds` (the room) in light space.
- * `ready` resolves once the environment light probe has been baked and added.
+ * Configures colour output, tone mapping, image-based fill, the window sun and the emissive
+ * ceiling panels. The sun's orthographic shadow camera is fitted tightly around `bounds`
+ * (the room) in light space. `ready` resolves once the environment light probe has been
+ * baked and added.
  */
 export function setupLighting(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
   bounds: THREE.Box3,
+  room: OfficeLayout['room'],
 ): { ready: Promise<void>; dispose: () => void } {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping =
@@ -53,16 +55,81 @@ export function setupLighting(
   sun.shadow.bias = s.bias;
   sun.shadow.normalBias = s.normalBias;
   sun.shadow.radius = s.radius;
+  sun.shadow.intensity = s.intensity;
   fitShadowCamera(sun, bounds, s.margin);
   scene.add(sun, sun.target);
+
+  const fixtures = buildCeilingFixtures(room);
+  scene.add(fixtures);
 
   return {
     ready,
     dispose: () => {
       disposed = true;
       sun.shadow.dispose();
+      fixtures.removeFromParent();
+      fixtures.geometry.dispose();
+      (fixtures.material as THREE.Material).dispose();
     },
   };
+}
+
+type FixtureConfig = {
+  columns: number;
+  rows: number;
+  spacing: readonly [number, number];
+  panelSize: number;
+  thickness: number;
+};
+
+/**
+ * Centres of the ceiling panels (T-1150): a `columns` x `rows` grid centred on the room,
+ * hung flush under the ceiling. Panels that would cross a wall are left out.
+ */
+export function ceilingFixturePositions(
+  room: OfficeLayout['room'],
+  f: FixtureConfig = R.ceilingFixtures,
+): [number, number, number][] {
+  const y = room.height - f.thickness / 2;
+  const half = f.panelSize / 2;
+  const out: [number, number, number][] = [];
+  for (let r = 0; r < f.rows; r++) {
+    const z = (r - (f.rows - 1) / 2) * f.spacing[1];
+    if (Math.abs(z) + half > room.depth / 2) continue;
+    for (let c = 0; c < f.columns; c++) {
+      const x = (c - (f.columns - 1) / 2) * f.spacing[0];
+      if (Math.abs(x) + half > room.width / 2) continue;
+      out.push([x, y, z]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The ceiling panels as one `InstancedMesh` (one draw call). Emissive only: no light
+ * source and no shadow casting (plan §3.1 render budget).
+ */
+export function buildCeilingFixtures(room: OfficeLayout['room']): THREE.InstancedMesh {
+  const f = R.ceilingFixtures;
+  const positions = ceilingFixturePositions(room, f);
+  const mesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(f.panelSize, f.thickness, f.panelSize),
+    new THREE.MeshStandardMaterial({
+      color: f.color,
+      emissive: f.emissive,
+      emissiveIntensity: f.emissiveIntensity,
+      roughness: 1,
+    }),
+    positions.length,
+  );
+  mesh.name = 'ceiling_fixtures';
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  const m = new THREE.Matrix4();
+  positions.forEach((p, i) => mesh.setMatrixAt(i, m.makeTranslation(...p)));
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  return mesh;
 }
 
 /** Fits the light's orthographic shadow frustum to the box corners expressed in light space. */
