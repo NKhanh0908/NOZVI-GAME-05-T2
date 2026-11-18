@@ -14,6 +14,7 @@ import { fadeOpacity } from './cameraMath';
 import { KeyboardInput } from './input';
 import { Player } from './player';
 import { setupLighting } from './lighting';
+import { applyMaterialTable } from './materials';
 import { createFrameRenderer, type FrameRenderer } from './postProcessing';
 import { buildRoom } from './room';
 import { renderQuality, type RenderQuality } from './renderQuality';
@@ -164,6 +165,8 @@ export class Game {
     void loadFurniture(office, officeLayout, placements).then((result) => {
       if (this.disposed) return result.dispose();
       this.furniture = result;
+      // T-1149: material table (roughness, metalness, palette colour) on the Kenney materials.
+      applyMaterialTable(office);
       occluders.length = 0;
       office.updateMatrixWorld(true);
       office.traverse((o) => {

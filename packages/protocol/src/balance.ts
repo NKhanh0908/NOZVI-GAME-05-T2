@@ -165,6 +165,29 @@ export const BALANCE = {
       msaaSamples: 4,
       bloom: { strength: 0.25, radius: 0.4, threshold: 4 },
     },
+    /**
+     * T-1149, `high` render quality only: `scene.environment` is a PMREM of THREE
+     * RoomEnvironment (soft reflections on glass, metal and screens) at
+     * `environmentIntensity`, in place of the light probe. `e2e` keeps the light probe.
+     * `blurSigma` is the PMREMGenerator.fromScene blur (radians).
+     */
+    reflections: { blurSigma: 0.04 },
+    /**
+     * T-1149: one material table per material class, applied to the loaded Kenney
+     * furniture, prop and decor materials (`apps/web/src/game/materials.ts` maps Kenney
+     * material names to a class). `palette` names an `officeLayout.palette` entry whose
+     * colour the class takes (REQ-ROOM-001: walnut wood, white metal); classes without one
+     * keep the Kenney colour.
+     */
+    materials: {
+      wood: { roughness: 0.7, metalness: 0, palette: 'deskSurfaces' },
+      metal: { roughness: 0.4, metalness: 0.4, palette: 'deskFrame' },
+      fabric: { roughness: 0.95, metalness: 0 },
+      glass: { roughness: 0.05, metalness: 0 },
+      /** Plastic housings and screens (black electronics). */
+      plastic: { roughness: 0.3, metalness: 0 },
+      default: { roughness: 0.8, metalness: 0 },
+    },
   },
 } as const;
 export type Balance = typeof BALANCE;
