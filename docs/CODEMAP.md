@@ -48,6 +48,8 @@ Room shell details (T-1151): `apps/web/src/game/roomDetails.ts` (window frames +
 
 Materials and reflections (T-1149): `apps/web/src/game/materials.ts` maps Kenney material names to a class and applies `BALANCE.rendering.materials` (called in `Game.ts` after `loadFurniture`); `lighting.ts` `setupEnvironment` sets a PMREM `RoomEnvironment` as `scene.environment` in `high`, light probe in `e2e`. Tests: `apps/web/test/materials.test.ts`, `lighting.test.ts`.
 
+Working desktop (T-1155, REQ-INT-002): `apps/web/src/game/desk/screenState.ts` (pure: `deskScreenStates` from room state, `screenStateFor`, `deskBySeat`), `desk/screenTextures.ts` (shared desktop / lock `CanvasTexture`s, injectable canvas, redraw throttle), `desk/DeskScreens.ts` (instanced screen quads per state, lamp glow shells; `follow(room, now)` called from the `Game.ts` loop, created after `loadFurniture`); tunables `BALANCE.deskScreen`; dev hook `getDeskScreen`. Tests: `apps/web/test/deskScreens.test.ts`, e2e `deskScreen.spec.ts`.
+
 Desk props (T-1152): `apps/web/src/game/assets/deskProps.ts` resolves each desk's six layout components to Kenney models (`furnitureManifest.ts` `DESK_SCREEN`, `FURNITURE_PROPS`); `Game.ts` passes them to `loadFurniture` as `standalone` placements; dev hook `getDeskProps`. Tests: `apps/web/test/deskProps.test.ts`, e2e `deskProps.spec.ts`.
 
 Avatar render cost (T-1161): `apps/web/src/game/avatar/mergeSkinned.ts` merges an avatar GLB's skinned parts into one vertex-coloured skinned mesh (called from `AvatarView` `loadTemplate`); `RemoteAvatars.createBlobShadow` draws the shared blob shadow and remote avatars cast no real shadow. Tests: `apps/web/test/mergeSkinned.test.ts`, `remoteAvatars.test.ts`; numbers from e2e `renderBaseline.spec.ts`.

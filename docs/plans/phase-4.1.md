@@ -148,6 +148,8 @@ Food Kit models use one textured primitive each and reference `Textures/colormap
 - While the desk's occupant has activity `working`, the monitor shows a simulated desktop drawn on a `CanvasTexture` (wallpaper, a clock, one window with moving text lines) and the desk lamp is on. When the occupant stops working, the screen dims to a lock screen; an empty desk has a dark screen.
 - This needs no new network state: every client derives it from the replicated `activity` and `seatId`. The simulated desktop is decoration and has no usable applications (§7).
 
+**Task 11 result (T-1155, 2026-11-19).** Screens follow every employee's replicated `seatId` / `activity` (local and remote alike): `off` (dark), `locked` (dimmed wallpaper with a padlock) for any seated activity other than `working`, `desktop` (§6.3 default: palette wallpaper, task-bar clock, one window with scrolling text bars, no employee data) while working; the lamp shade glows while its desk shows the desktop. Two shared `CanvasTexture`s; the desktop is redrawn at most once per second and only while shown (`BALANCE.deskScreen`). Draw calls on the observing page in e2e quality (`deskScreen.spec.ts`): 65 with A locked, 66 while A works (+1 lamp shell, +12 triangles); the overlays cost +1 call with nobody seated and at most +3 (screens) +2 (lamp models). Choices in DECISIONS 2026-11-19.
+
 ### 3.4 Coffee routine (changes REQ-INT-003, resolves OQ-015)
 
 - `EmployeeState` gains `item: '' | 'coffee'` and `sips: number`. Activity gains `brewing`. `PROTOCOL_VERSION` moves up by one from the Phase 4 value.
