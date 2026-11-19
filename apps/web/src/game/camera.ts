@@ -80,6 +80,14 @@ export class CameraRig {
     this.camera.lookAt(this.focus);
   }
 
+  /**
+   * Shows the occluders hidden last frame again (the next `update` hides what still blocks).
+   * T-1156: called before furniture is lifted or dropped, which rewrites instance matrices.
+   */
+  releaseOccluders(): void {
+    this.hider.restore();
+  }
+
   /** Current camera-to-focus distance after occlusion and damping. */
   get distanceToFocus(): number {
     return this.currentDistance;

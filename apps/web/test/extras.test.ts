@@ -109,10 +109,31 @@ it('routes E at the coffee machine through the action hook', () => {
   expect(onAction).toHaveBeenCalledWith(target('coffee_machine'));
 });
 
-it('opening the cabinet returns local feedback and sends nothing', () => {
-  const { p, c, sent } = setup({ x: 0, z: 0, heading: 0 });
-  expect(handleAction(target('storage_cabinet'), p, c)).toEqual({ message: 'Cabinet opened' });
+it('E at the cabinet or fridge toggles it locally and sends nothing (T-1156)', () => {
+  const p = { state: { x: 1.32, z: -0.36, heading: Math.PI }, activity: 'idle' as Activity };
+  const sent: IntentMessage[] = [];
+  const onAction = vi.fn();
+  const open = new Set<string>();
+  const c = new InteractionController(p, new SeatRegistry(), 'me', {
+    onExit: vi.fn(),
+    sendIntent: (i) => sent.push(i),
+    onAction,
+    onToggleOpen: (t) => (open.has(t.id) ? open.delete(t.id) : open.add(t.id)),
+    isOpen: (id) => open.has(id),
+  });
+  expect(c.currentPrompt()?.text).toBe('E — Open cabinet');
+  c.press();
+  expect(open.has('storage_cabinet')).toBe(true);
+  expect(c.currentPrompt()?.text).toBe('E — Close cabinet');
+  c.press();
+  expect(open.has('storage_cabinet')).toBe(false);
+  p.state = { x: 0.96, z: -3.3, heading: Math.PI };
+  expect(c.currentPrompt()?.text).toBe('E — Open fridge');
+  c.press();
+  expect(c.currentPrompt()?.text).toBe('E — Close fridge');
+  expect(handleAction(target('storage_cabinet'), p, c)).toEqual({});
   expect(sent).toEqual([]);
+  expect(onAction).not.toHaveBeenCalled();
   expect(p.activity).toBe('idle');
 });
 
@@ -127,6 +148,7 @@ function frameLoop() {
     input: { read: () => input },
     controller: { currentPrompt: () => null },
     rig: { yaw: 0, update() {}, distanceToFocus: 4 },
+    feedback: { update() {} },
     identity: { name: 'Test' },
     nameplate: { set() {} },
     remotes: { update() {}, someoneBrewing: () => false },

@@ -165,6 +165,8 @@ Food Kit models use one textured primitive each and reference `Textures/colormap
 - The current interaction target gets a visible highlight, and the prompt shows the key and the action name.
 - Cabinet, fridge and door interactions play a local open and close animation instead of only a toast. They stay local presentation, as today.
 
+**Task 12 result (T-1156, 2026-11-19).** The target the prompt names is highlighted (emissive tint on cloned materials) and the prompt shows the key as a keycap with the action name; E opens and closes the storage cabinet and the fridge (new decoration-only interactable), walking out of range closes them, and the main door swings open 0.5 s before the exit. All of it is local; instanced items are lifted into their own model only while highlighted or open. Draw calls in e2e quality (`interaction.spec.ts`, same view): 124 out of range, 129 with the cabinet highlighted, 124 again after; the fridge (a single model) adds none. Choices in DECISIONS 2026-11-19.
+
 ### 3.6 2D UI
 
 - One set of design tokens (colours from the SPEC palette, spacing, radius, type scale) applied to the join screen, employee list, prompt, toast, connection banner and the Phase 4 TV panel. Keyboard focus states and readable contrast are part of the restyle.

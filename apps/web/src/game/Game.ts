@@ -26,6 +26,7 @@ import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
 import { Nameplate } from './hud/Nameplate';
 import { handleAction } from './interaction/extras';
+import { InteractionFeedback } from './interaction/InteractionFeedback';
 import { activityLabel } from './hud/activityLabel';
 import { RemoteAvatars } from './remote/RemoteAvatars';
 import { EntranceBoard } from './hud/EntranceBoard';
@@ -126,6 +127,8 @@ export class Game {
   private readonly unbindBoard: () => void;
   /** REQ-INT-002 (T-1155): monitors and desk lamps follow each desk's replicated activity. */
   private deskScreens: DeskScreens | undefined;
+  /** REQ-INT-001/004/005 (T-1156): target highlight and local cabinet / fridge / door swings. */
+  private readonly feedback: InteractionFeedback;
 
   constructor(
     private readonly host: HTMLElement,
@@ -146,7 +149,7 @@ export class Game {
       roomOccupancy(currentState),
       netRoom.sessionId,
       {
-        onExit: () => this.onExit?.(),
+        onExit: (door) => this.feedback.exitThroughDoor(door, () => this.onExit?.()),
         sendIntent: (intent) => this.sendIntent(intent),
         onAction: (target) => {
           const result = handleAction(target, this.player, this.controller);
@@ -154,6 +157,8 @@ export class Game {
         },
         onTv: () => this.tvMode.enter(),
         brewer: roomBrewer(currentState),
+        onToggleOpen: (target) => this.feedback.toggle(target),
+        isOpen: (id) => this.feedback.openables.isOpen(id),
       },
     );
     this.unbindPrediction = this.bindRoom(netRoom);
@@ -210,6 +215,13 @@ export class Game {
       .catch((error: unknown) => console.warn('Avatar loading failed; keeping capsule.', error));
     this.rig = new CameraRig(this.camera, this.renderer.domElement, occluders);
     this.rig.yaw = this.player.state.heading;
+    this.feedback = new InteractionFeedback({
+      focus: () => (this.tvMode.isOpen ? null : this.controller.focusTarget()),
+      player: () => this.player.state,
+      furniture: () => this.furniture,
+      occluders,
+      releaseOccluders: () => this.rig.releaseOccluders(),
+    });
     this.scene.updateMatrixWorld(true);
     this.rig.update(this.player.mesh.position, 0);
     const lighting = setupLighting(
@@ -262,6 +274,8 @@ export class Game {
         /** T-1155: the screen state, lamp and shared texture of one desk. */
         getDeskScreen: (deskId: string) => this.deskScreens?.info(deskId) ?? null,
         getActivity: () => this.player.activity,
+        /** T-1156: highlighted target, local open states and lifted furniture. */
+        getInteraction: () => this.feedback.snapshot(),
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
           this.rig.yaw = heading;
@@ -417,6 +431,7 @@ export class Game {
         this.promptText = text;
         this.onPrompt?.(prompt);
       }
+      this.feedback.update(dt);
       this.rig.update(this.player.mesh.position, dt);
       this.player.setOpacity(fadeOpacity(this.rig.distanceToFocus));
       this.onFrame?.(dt);
@@ -438,6 +453,7 @@ export class Game {
     this.unbindPrediction();
     this.input.dispose();
     window.removeEventListener('keydown', this.keydown);
+    this.feedback.dispose();
     this.rig.dispose();
     this.furniture?.dispose();
     this.remotes.dispose();
