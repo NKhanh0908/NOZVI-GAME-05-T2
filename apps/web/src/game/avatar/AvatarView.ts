@@ -10,7 +10,14 @@ import {
   type Item,
   type Vec3,
 } from '@office/protocol';
-import { HeldProp, propFor, propRest, type PropLoader, type PropState } from './HeldProp';
+import {
+  HeldProp,
+  propFor,
+  propInHand,
+  propRest,
+  type PropLoader,
+  type PropState,
+} from './HeldProp';
 import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
 import {
@@ -134,7 +141,12 @@ export class AvatarView {
   ) {
     this.root.add(model);
     this.rig = findRig(bones);
-    this.prop = new HeldProp(this.root, this.rig.right?.hand ?? null, loadProp);
+    this.prop = new HeldProp(
+      this.root,
+      this.rig.right?.hand ?? null,
+      loadProp,
+      this.rig.right?.finger ?? null,
+    );
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.play('idle');
@@ -312,7 +324,10 @@ export class AvatarView {
 
   private updateProp(): void {
     const kind = propFor(this.item, this.activity);
-    this.prop.set(kind, kind ? propRest(this.seated, this.activity, this.restSpot) : null);
+    const rest = kind ? propRest(this.seated, this.activity, this.restSpot) : null;
+    // T-1610: stowed while the hands are busy (wave, emotes and their fade-out, brewing,
+    // working); back in the hand after.
+    this.prop.set(kind, rest, !propInHand(this.activity, this.emote, this.overlay !== null));
     this.prop.update();
   }
 
