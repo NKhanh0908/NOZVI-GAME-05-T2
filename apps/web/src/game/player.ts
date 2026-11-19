@@ -83,6 +83,7 @@ export class Player {
       : localActivity(this.serverActivity, moving);
     if (activity !== this.activity) this.setActivity(activity);
     this.brewElapsed = this.activity === 'brewing' ? this.brewElapsed + dt : 0;
+    this.view?.setSeat(seatSocket(this.seatId)?.kind ?? null);
     this.view?.setActivity(this.activity, this.predictor.seated);
     this.view?.setHeld(this.item, this.predictor.seated ? cupRestSpot(this.seatId) : null);
     // Movement ends an emote on the server; like breaks, stop showing it at once.
@@ -163,6 +164,11 @@ export class Player {
   /** Typing overlay weight of the loaded avatar, 0 to 1 (T-1219). */
   get typing(): number {
     return this.view?.typing ?? 0;
+  }
+
+  /** Make-coffee overlay weight, 0 to 1 (T-1611). */
+  get brew(): number {
+    return this.view?.brew ?? 0;
   }
 
   /**

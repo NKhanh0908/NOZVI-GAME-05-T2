@@ -149,6 +149,13 @@ export class YouTubeTvPlayer implements TvPlayer {
   /** The cued video has reported `playing` or `paused` since the last load / stop. */
   private started = false;
   private pendingSeek: number | null = null;
+  /**
+   * True from `load()` until the player reports `cued`. YouTube answers `playVideo` sent in
+   * the same tick as `cueVideoById` with error 2 (T-1612), so a `play()` in this window is
+   * held in `playOnCue` and sent once the video is cued.
+   */
+  private awaitingCue = false;
+  private playOnCue = false;
   /** Rate the binding asked for, and the rate last sent to the IFrame player. */
   private wantedRate = 1;
   private sentRate = 1;
@@ -173,6 +180,8 @@ export class YouTubeTvPlayer implements TvPlayer {
     this.pendingSeek = null;
     this.rates = null;
     this.lastTime = startSeconds;
+    this.awaitingCue = true;
+    this.playOnCue = false;
     this.ensurePlayer();
     this.run('cueVideoById', { videoId, startSeconds }, (p) =>
       p.cueVideoById({ videoId, startSeconds }),
@@ -180,10 +189,16 @@ export class YouTubeTvPlayer implements TvPlayer {
   }
   play(): void {
     this.log('play');
+    if (this.awaitingCue) {
+      this.playOnCue = true;
+      this.log('play held until cued');
+      return;
+    }
     this.run('playVideo', undefined, (p) => p.playVideo());
   }
   pause(): void {
     this.log('pause');
+    this.playOnCue = false;
     this.run('pauseVideo', undefined, (p) => p.pauseVideo());
   }
   seek(time: number): void {
@@ -203,6 +218,8 @@ export class YouTubeTvPlayer implements TvPlayer {
   }
   stop(): void {
     this.log('stop');
+    this.awaitingCue = false;
+    this.playOnCue = false;
     this.started = false;
     this.pendingSeek = null;
     this.lastTime = 0;
@@ -392,6 +409,14 @@ export class YouTubeTvPlayer implements TvPlayer {
           this.log('onStateChange', { state: e.data, name: stateName(e.data) });
           if (this.disposed || this.player !== player) return;
           if (e.data === YT_STATE.ended) this.ended.emit();
+          if (e.data === YT_STATE.cued && this.awaitingCue) {
+            this.awaitingCue = false;
+            if (this.playOnCue) {
+              this.playOnCue = false;
+              this.log('play after cued');
+              player.playVideo();
+            }
+          }
           const startedNow = e.data === YT_STATE.playing || e.data === YT_STATE.paused;
           if (startedNow && !this.started) this.onStarted(player);
         },

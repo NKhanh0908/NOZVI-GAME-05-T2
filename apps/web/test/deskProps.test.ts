@@ -1,10 +1,15 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { officeLayout } from '@office/protocol';
 import { DESK_PROP_TYPES, deskProps } from '../src/game/assets/deskProps';
-import { castsShadow, loadFurniture } from '../src/game/assets/loadFurniture';
+import {
+  castsShadow,
+  fitModel,
+  furniturePlacements,
+  loadFurniture,
+} from '../src/game/assets/loadFurniture';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -86,6 +91,58 @@ it('owner report 2026-11-18: screen, keyboard and mouse face the chair of their 
         z: ws.seat.position[2] - p.placement.box.position[2],
       };
       expect(front.x * toSeat.x + front.z * toSeat.z, `${p.placement.box.id}`).toBeGreaterThan(0);
+    }
+  }
+});
+
+const loadDesk = () =>
+  new Promise<THREE.Group>((resolve, reject) => {
+    const bytes = readFileSync(new URL('../public/assets/furniture/desk.glb', import.meta.url));
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    new GLTFLoader().parse(buffer, '', (gltf) => resolve(gltf.scene), reject);
+  });
+
+it('T-1609: every placed desk turns its open knee side to its chair, props stay on top', async () => {
+  const source = await loadDesk();
+  const placements = furniturePlacements(officeLayout);
+  const props = deskProps(officeLayout);
+  expect(officeLayout.workstations).toHaveLength(8);
+  for (const ws of officeLayout.workstations) {
+    const id = `${ws.id}_desk`;
+    const layoutDesk = desks.find((d) => d.id === id)!;
+    const placement = placements.find((p) => p.box.id === id)!;
+    // The 180-degree correction is applied exactly once on top of the layout rotY.
+    expect(placement.rotY, id).toBe(((layoutDesk.rotY ?? 0) + 180) % 360);
+    const fitted = fitModel(source, placement.box, placement.rotY);
+    fitted.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(fitted);
+    const [cx, , cz] = placement.box.position;
+    const toSeat = new THREE.Vector2(
+      ws.seat.position[0] - cx,
+      ws.seat.position[2] - cz,
+    ).normalize();
+    // A ray at knee height from the chair side, along the desk's middle, meets the
+    // modesty panel first; it must lie past the desk centre (away from the chair).
+    const knee = bounds.min.y + 0.3 * (bounds.max.y - bounds.min.y);
+    const reach = Math.max(placement.box.size[0], placement.box.size[2]);
+    const ray = new THREE.Raycaster(
+      new THREE.Vector3(cx + toSeat.x * reach, knee, cz + toSeat.y * reach),
+      new THREE.Vector3(-toSeat.x, 0, -toSeat.y),
+    );
+    const hit = ray.intersectObject(fitted, true)[0];
+    expect(hit, `${id}: modesty panel`).toBeDefined();
+    const depth = (hit!.point.x - cx) * toSeat.x + (hit!.point.z - cz) * toSeat.y;
+    expect(depth, `${id}: panel side`).toBeLessThan(0);
+    // Desk props stand on the turned desk's top: straight below each prop is the desktop,
+    // and the prop's box starts on it (the screen box starts 2 cm higher, on its own base).
+    for (const p of props.filter((q) => q.deskId === id)) {
+      const [px, py, pz] = p.placement.box.position;
+      const down = new THREE.Raycaster(new THREE.Vector3(px, 2, pz), new THREE.Vector3(0, -1, 0));
+      const top = down.intersectObject(fitted, true)[0];
+      expect(top?.point.y, p.placement.box.id).toBeCloseTo(bounds.max.y, 3);
+      const bottom = py - p.placement.box.size[1] / 2;
+      expect(bottom - bounds.max.y, p.placement.box.id).toBeGreaterThanOrEqual(-1e-6);
+      expect(bottom - bounds.max.y, p.placement.box.id).toBeLessThanOrEqual(0.03);
     }
   }
 });

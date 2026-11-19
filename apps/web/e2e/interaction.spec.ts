@@ -25,6 +25,25 @@ const interaction = (page: Page) =>
   page.evaluate(() => (window as unknown as Win).__office.getInteraction());
 const drawCalls = (page: Page) =>
   page.evaluate(() => (window as unknown as Win).__office.getDrawCalls());
+/**
+ * Draw calls once the camera has caught up with a teleport. The camera rig follows the player
+ * in the frame loop, so a read right after `teleport` can still see the previous view (CI
+ * renders at about 5 FPS): wait two frames, then read until two reads agree.
+ */
+async function settledDrawCalls(page: Page): Promise<DrawCalls> {
+  let previous: DrawCalls | null = null;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
+    const current = await drawCalls(page);
+    if (previous && previous.total === current.total && previous.triangles === current.triangles) {
+      return current;
+    }
+    previous = current;
+  }
+  return previous!;
+}
 const teleport = (page: Page, x: number, z: number, heading: number) =>
   page.evaluate(
     ([x, z, h]) => (window as unknown as Win).__office.teleport(x!, z!, h!),
@@ -58,13 +77,13 @@ test('approaching a target highlights it and the prompt names the action; leavin
   await teleport(page, ...OUT_OF_RANGE);
   await expect.poll(async () => (await interaction(page)).highlighted).toBeNull();
   await expect(prompt).toBeHidden();
-  const rest = await drawCalls(page);
+  const rest = await settledDrawCalls(page);
   await teleport(page, ...NEAR_CABINET);
   await expect.poll(async () => (await interaction(page)).highlighted).toBe('storage_cabinet');
-  const highlighted = await drawCalls(page);
+  const highlighted = await settledDrawCalls(page);
   await teleport(page, ...OUT_OF_RANGE);
   await expect.poll(async () => (await interaction(page)).highlighted).toBeNull();
-  const back = await drawCalls(page);
+  const back = await settledDrawCalls(page);
   console.log(
     `draw calls main/shadow/total: out of range ${rest.main}/${rest.shadow}/${rest.total}, ` +
       `cabinet highlighted ${highlighted.main}/${highlighted.shadow}/${highlighted.total}, ` +

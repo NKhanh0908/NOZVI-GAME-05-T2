@@ -2,12 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
-import { BALANCE, officeLayout } from '@office/protocol';
+import { BALANCE, EMOTES, officeLayout } from '@office/protocol';
 import { AvatarView } from '../src/game/avatar/AvatarView';
 import {
   HeldProp,
+  gripPoint,
   normalizeProp,
   propFor,
+  propInHand,
   propRest,
   type PropKind,
 } from '../src/game/avatar/HeldProp';
@@ -50,6 +52,23 @@ describe('which prop and where', () => {
     expect(propRest(true, 'working', [...spot])).toEqual(spot);
     expect(propRest(true, 'drinking', [...spot])).toBeNull();
     expect(propRest(false, 'walking', [...spot])).toBeNull();
+  });
+});
+
+describe('cup in the hand only while the hands are free (T-1610)', () => {
+  it('shows it idle, walking and for the sip; stows it for wave, emotes, brewing and working', () => {
+    expect(propInHand('idle', '')).toBe(true);
+    expect(propInHand('walking', '')).toBe(true);
+    expect(propInHand('drinking', '')).toBe(true);
+    for (const a of ['waving', 'brewing', 'working', 'sitting', 'resting'] as const) {
+      expect(propInHand(a, '')).toBe(false);
+    }
+    for (const e of EMOTES) {
+      expect(propInHand('idle', e)).toBe(false);
+      expect(propInHand('walking', e)).toBe(false);
+    }
+    // An overlay emote still fading out keeps the cup stowed.
+    expect(propInHand('idle', '', true)).toBe(false);
   });
 });
 
@@ -245,6 +264,114 @@ describe('AvatarView cup (real avatar rig)', () => {
     view.setActivity('idle', false);
     view.update(0.016);
     expect(view.heldProp).toBeNull();
+    view.dispose();
+  });
+});
+
+/** A fake prop sized like a real one, so the grip centres it at half its height. */
+const sizedLoader = vi.fn(async (kind: PropKind) => normalizeProp(fakeProp(kind), kind));
+
+describe.each(['men_suit', 'women_suit'] as const)('AvatarView cup on %s (T-1610)', (avatarId) => {
+  async function load() {
+    vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(loadLocalGltf);
+    const view = await AvatarView.load(avatarId, { loadProp: sizedLoader });
+    new THREE.Scene().add(view.root);
+    view.setActivity('idle', false);
+    view.setHeld('coffee', null);
+    view.update(0.016);
+    await flush();
+    view.update(0.016);
+    return view;
+  }
+  /** Runs long enough for every cross-fade and overlay fade to finish. */
+  const settle = (view: AvatarView) => {
+    for (let i = 0; i < 40; i++) view.update(0.05);
+  };
+
+  it('stows the cup for wave, every emote, brewing and working and restores it after', async () => {
+    const view = await load();
+    const cup = view.root.getObjectByName('prop:cup')!;
+    expect(view.heldProp).toEqual({ kind: 'cup', place: 'hand' });
+    expect(cup.visible).toBe(true);
+    for (const e of EMOTES) {
+      view.setEmote(e);
+      view.update(0.05);
+      expect(view.heldProp, e).toEqual({ kind: 'cup', place: 'hidden' });
+      expect(cup.visible, e).toBe(false);
+      view.setEmote('');
+      settle(view);
+      expect(view.heldProp, `${e} done`).toEqual({ kind: 'cup', place: 'hand' });
+      expect(cup.visible).toBe(true);
+    }
+    // Walking keeps it in the hand; the legacy waving activity and brewing stow it.
+    for (const [a, place] of [
+      ['walking', 'hand'],
+      ['waving', 'hidden'],
+      ['idle', 'hand'],
+      ['brewing', 'hidden'],
+      ['idle', 'hand'],
+      ['drinking', 'hand'],
+      ['idle', 'hand'],
+    ] as const) {
+      view.setActivity(a, false);
+      settle(view);
+      expect(view.heldProp, a).toEqual({ kind: 'cup', place });
+      expect(cup.visible, a).toBe(place === 'hand');
+    }
+    // Working on a seat without a rest spot: stowed; with one, on the desk.
+    view.setActivity('working', true);
+    settle(view);
+    expect(view.heldProp).toEqual({ kind: 'cup', place: 'hidden' });
+    view.setHeld('coffee', [1, 0.75, 4]);
+    view.update(0.016);
+    expect(view.heldProp).toEqual({ kind: 'cup', place: 'rest' });
+    expect(cup.visible).toBe(true);
+    view.setActivity('idle', false);
+    view.setHeld('coffee', null);
+    settle(view);
+    expect(view.heldProp).toEqual({ kind: 'cup', place: 'hand' });
+    // Cleared while stowed: removed from the scene graph, not just hidden.
+    view.setEmote('wave');
+    view.update(0.016);
+    view.setHeld('', null);
+    view.update(0.016);
+    expect(view.heldProp).toBeNull();
+    expect(cup.parent).toBeNull();
+    expect(view.root.getObjectByName('prop:cup')).toBeUndefined();
+    expect(view.hasFiniteBones()).toBe(true);
+    view.dispose();
+  });
+
+  it('grips the cup in the palm between the hand and finger bones', async () => {
+    const view = await load();
+    const hand = view.root.getObjectByName('HandR')!;
+    const finger = hand.children.find((c) => (c as THREE.Bone).isBone)!;
+    const cup = view.root.getObjectByName('prop:cup')!;
+    for (const a of ['idle', 'walking', 'drinking'] as const) {
+      view.setActivity(a, false);
+      settle(view);
+      const h = world(hand);
+      const k = world(finger);
+      const tip = world(finger.children[0]!);
+      const grip = gripPoint(hand, finger);
+      // Between the bones along the hand ...
+      const axis = k.clone().sub(h);
+      const t = grip.clone().sub(h).dot(axis) / axis.lengthSq();
+      expect(t, a).toBeGreaterThan(0.2);
+      expect(t, a).toBeLessThan(0.9);
+      // ... off the bone line by the palm offset, on the side the fingers curl to.
+      const onLine = h.clone().addScaledVector(axis, t);
+      const offset = grip.clone().sub(onLine);
+      expect(offset.length(), a).toBeCloseTo(BALANCE.coffeeView.grip.palm, 4);
+      expect(offset.dot(tip.clone().sub(k)), a).toBeGreaterThan(0);
+      // The cup is centred on that point, upright.
+      const centre = new THREE.Box3().setFromObject(cup).getCenter(new THREE.Vector3());
+      expect(centre.distanceTo(grip), a).toBeLessThan(0.01);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(
+        cup.getWorldQuaternion(new THREE.Quaternion()),
+      );
+      expect(up.y, a).toBeCloseTo(1, 4);
+    }
     view.dispose();
   });
 });

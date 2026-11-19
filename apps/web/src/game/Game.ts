@@ -290,6 +290,7 @@ export class Game {
         },
         avatarOk: () => this.player.viewFinite(),
         getTyping: () => this.player.typing,
+        getBrew: () => this.player.brew,
         getEmote: () => this.player.emote,
         /** T-1154: the local held item, sips and the cup / glass as drawn. */
         getHeld: () => ({

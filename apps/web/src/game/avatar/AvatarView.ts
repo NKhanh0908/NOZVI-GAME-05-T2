@@ -10,11 +10,22 @@ import {
   type Item,
   type Vec3,
 } from '@office/protocol';
-import { HeldProp, propFor, propRest, type PropLoader, type PropState } from './HeldProp';
+import {
+  HeldProp,
+  propFor,
+  propInHand,
+  propRest,
+  type PropLoader,
+  type PropState,
+} from './HeldProp';
 import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
+import type { SeatKind } from '../interaction/seats';
 import {
   EMOTE_OVERLAYS,
+  applyBrew,
+  applyRestHands,
+  applySeatedLegs,
   applySip,
   applyTyping,
   approach,
@@ -33,7 +44,7 @@ export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   resting: { clip: 'Sitting_Idle_Loop', loop: true },
   drinking: { clip: 'Interact', loop: false },
   waving: { clip: 'Idle_Loop', loop: true }, // Arm is overridden procedurally.
-  brewing: { clip: 'Idle_Loop', loop: true }, // Steam at the machine shows the brew (T-1154).
+  brewing: { clip: 'Idle_Loop', loop: true }, // Make-coffee overlay on top (T-1611).
 };
 
 /**
@@ -68,7 +79,39 @@ function loadUal() {
   return ualPromise;
 }
 
-type Template = { scene: THREE.Object3D; clips: THREE.AnimationClip[] };
+/**
+ * T-1614: where the seated clip puts the hip joints (midpoint of the thigh bones) in the
+ * model frame (+Z forward, y up, at the start of `Sitting_Idle_Loop`) and the rest-pose
+ * foot height. The seat offset moves the first onto `BALANCE.avatar.sit`.
+ */
+export type SitMeasure = { hipForward: number; hipHeight: number; footY: number };
+type Template = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; sit: SitMeasure };
+
+const SEATED_CLIP = 'Sitting_Idle_Loop';
+
+/** Samples the seated clip on the template once; leaves the skeleton in its rest pose. */
+function measureSit(
+  scene: THREE.Object3D,
+  mesh: THREE.SkinnedMesh,
+  clips: THREE.AnimationClip[],
+): SitMeasure {
+  const bone = (name: string) => mesh.skeleton.bones.find((b) => b.name === name);
+  const at = (name: string) =>
+    bone(name)?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3();
+  scene.updateMatrixWorld(true);
+  const footY = Math.min(at('FootL').y, at('FootR').y);
+  const clip = clips.find((c) => c.name === SEATED_CLIP);
+  const mixer = new THREE.AnimationMixer(scene);
+  if (clip) mixer.clipAction(clip).play();
+  mixer.update(0);
+  scene.updateMatrixWorld(true);
+  const hip = at('UpperLegL').add(at('UpperLegR')).multiplyScalar(0.5);
+  mixer.stopAllAction();
+  mixer.uncacheRoot(scene);
+  mesh.skeleton.pose();
+  scene.updateMatrixWorld(true);
+  return { hipForward: hip.z, hipHeight: hip.y, footY };
+}
 const templates = new Map<AvatarId, Promise<Template>>();
 
 async function loadTemplate(avatarId: AvatarId): Promise<Template> {
@@ -96,7 +139,7 @@ async function loadTemplate(avatarId: AvatarId): Promise<Template> {
   // T-1161: one skinned mesh per avatar (1 draw call per pass instead of 10); the parts share
   // one skeleton and differ only in colour. Unmergeable assets stay as they are.
   mergeSkinnedMeshes(gltf.scene);
-  return { scene: gltf.scene, clips };
+  return { scene: gltf.scene, clips, sit: measureSit(gltf.scene, target, clips) };
 }
 
 export class AvatarView {
@@ -120,21 +163,35 @@ export class AvatarView {
   private overlayWeight = 0;
   /** Blend weight of the sip overlay while `drinking`, 0 to 1 (T-1154). */
   private sipWeight = 0;
+  /** Blend weight of the make-coffee overlay while `brewing`, 0 to 1 (T-1611). */
+  private brewWeight = 0;
   /** REQ-INT-003 (T-1154): the replicated held item and the cup's rest spot when seated. */
   private item: Item = '';
   private restSpot: Vec3 | null = null;
   private readonly prop: HeldProp;
+  /** T-1614: the seat's furniture, which sets the seated hip target. */
+  private seatKind: SeatKind = 'desk';
+  /** Blend weight of the seat offset and planted feet, 0 to 1 (T-1614). */
+  private sitWeight = 0;
+  /** Blend weight of the hands resting on the thighs, 0 to 1 (T-1614). */
+  private restWeight = 0;
 
   private constructor(
-    model: THREE.Object3D,
+    private readonly model: THREE.Object3D,
     private readonly bones: THREE.Bone[],
     clips: THREE.AnimationClip[],
     private readonly materials: THREE.Material[] = [],
     loadProp?: PropLoader,
+    private readonly sit: SitMeasure | null = null,
   ) {
     this.root.add(model);
     this.rig = findRig(bones);
-    this.prop = new HeldProp(this.root, this.rig.right?.hand ?? null, loadProp);
+    this.prop = new HeldProp(
+      this.root,
+      this.rig.right?.hand ?? null,
+      loadProp,
+      this.rig.right?.finger ?? null,
+    );
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.play('idle');
@@ -158,7 +215,7 @@ export class AvatarView {
         if (templates.get(avatarId) === template) templates.delete(avatarId);
       });
     }
-    const { scene, clips } = await template;
+    const { scene, clips, sit } = await template;
     const model = cloneSkinned(scene);
     const materials: THREE.Material[] = [];
     model.traverse((o) => {
@@ -172,7 +229,7 @@ export class AvatarView {
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
     });
     const target = findSkinnedMesh(model)!;
-    return new AvatarView(model, target.skeleton.bones, clips, materials, options.loadProp);
+    return new AvatarView(model, target.skeleton.bones, clips, materials, options.loadProp, sit);
   }
 
   /** Test hook: forgets cached templates so the next load parses the GLB again. */
@@ -193,6 +250,24 @@ export class AvatarView {
     if (seated && !wasSeated) this.playOnce('Sitting_Enter', a);
     else if (!seated && wasSeated) this.playOnce('Sitting_Exit', a);
     else this.play(a);
+  }
+
+  /**
+   * T-1614: the kind of seat the employee is on (desk chair or sofa); with `seated` it moves
+   * the model so the hips rest on that seat's cushion. Kept while standing.
+   */
+  setSeat(kind: SeatKind | null): void {
+    if (kind) this.seatKind = kind;
+  }
+
+  /** Seat offset weight (0 to 1, T-1614); tests read it. */
+  get seatBlend(): number {
+    return this.sitWeight;
+  }
+
+  /** Hands-on-thighs weight (0 to 1, T-1614); tests read it. */
+  get handsRest(): number {
+    return this.restWeight;
   }
 
   /**
@@ -265,12 +340,23 @@ export class AvatarView {
     return this.typingWeight;
   }
 
+  /** Make-coffee overlay weight (0 to 1, T-1611); e2e reads it through the dev hooks. */
+  get brew(): number {
+    return this.brewWeight;
+  }
+
   update(dt: number): void {
     this.mixer.update(dt);
     this.clock += dt;
+    const fade = BALANCE.activity.crossFadeSeconds;
+    this.placeOnSeat(dt);
+    // T-1614: seated and not working, the hands rest on the thighs; typing, emotes and the
+    // sip below take the arms over.
+    const resting = this.seated && this.activity !== 'working' && this.emote === '' ? 1 : 0;
+    this.restWeight = approach(this.restWeight, resting, dt, fade);
+    applyRestHands(this.root, this.rig, this.restWeight);
     // REQ-AVATAR-002 (T-1219): typing blends in and out over the activity cross-fade.
     // An emote takes the arms over from typing while it runs (T-1222).
-    const fade = BALANCE.activity.crossFadeSeconds;
     const typing = this.activity === 'working' && this.emote === '' ? 1 : 0;
     this.typingWeight = approach(this.typingWeight, typing, dt, fade);
     applyTyping(this.root, this.rig, this.clock, this.typingWeight);
@@ -280,6 +366,10 @@ export class AvatarView {
       EMOTE_OVERLAYS[this.overlay](this.root, this.rig, this.clock, this.overlayWeight);
       if (this.overlayWeight === 0) this.overlay = null;
     }
+    // REQ-INT-003 (T-1611): making coffee at the machine; an emote takes the arms over.
+    const brewing = this.activity === 'brewing' && this.emote === '' ? 1 : 0;
+    this.brewWeight = approach(this.brewWeight, brewing, dt, fade);
+    applyBrew(this.root, this.rig, this.clock, this.brewWeight);
     // REQ-INT-003 (T-1154): the sip lifts the right hand to the mouth, standing or seated.
     this.sipWeight = approach(this.sipWeight, this.activity === 'drinking' ? 1 : 0, dt, fade);
     applySip(this.root, this.rig, this.sipWeight);
@@ -310,9 +400,34 @@ export class AvatarView {
     this.updateProp();
   }
 
+  /**
+   * T-1614: the UAL seated clip puts the hips about 0.24 m behind and 0.33 m below the
+   * standing root, which on the seat socket (the chair's centre) is on the backrest. Move
+   * the model so the hip joints land on `BALANCE.avatar.sit[seatKind]` and plant the feet.
+   */
+  private placeOnSeat(dt: number): void {
+    const { blendSeconds } = BALANCE.avatar.sit;
+    this.sitWeight = approach(this.sitWeight, this.seated ? 1 : 0, dt, blendSeconds);
+    const sit = this.sit;
+    if (!sit) return;
+    const target = BALANCE.avatar.sit[this.seatKind];
+    const w = this.sitWeight;
+    this.model.position.set(
+      0,
+      (target.height - sit.hipHeight) * w,
+      (target.forward - sit.hipForward) * w,
+    );
+    this.model.updateWorldMatrix(false, true);
+    const floor = this.root.getWorldPosition(new THREE.Vector3()).y + sit.footY;
+    applySeatedLegs(this.root, this.rig, floor, w);
+  }
+
   private updateProp(): void {
     const kind = propFor(this.item, this.activity);
-    this.prop.set(kind, kind ? propRest(this.seated, this.activity, this.restSpot) : null);
+    const rest = kind ? propRest(this.seated, this.activity, this.restSpot) : null;
+    // T-1610: stowed while the hands are busy (wave, emotes and their fade-out, brewing,
+    // working); back in the hand after.
+    this.prop.set(kind, rest, !propInHand(this.activity, this.emote, this.overlay !== null));
     this.prop.update();
   }
 

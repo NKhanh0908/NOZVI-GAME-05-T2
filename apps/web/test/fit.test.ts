@@ -79,13 +79,21 @@ it('shares cached loads, uses item rotation, and keeps boxes for failed or unmap
   const mesh = instanced[0] as THREE.InstancedMesh;
   expect(mesh.count).toBe(2);
   expect(mesh.userData.instanceIds).toEqual(['desk_a', 'desk_b']);
-  const rotationY = (index: number) => {
+  // The model's +Z front after rotation: layout rotY plus the desk's 180-degree MODEL_YAW (T-1609).
+  const front = (index: number) => {
     const matrix = new THREE.Matrix4();
     mesh.getMatrixAt(index, matrix);
-    return new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().extractRotation(matrix)).y;
+    return new THREE.Vector3(0, 0, 1).transformDirection(matrix);
   };
-  expect(rotationY(0)).toBeCloseTo(Math.PI / 2);
-  expect(rotationY(1)).toBeCloseTo(0);
+  const expectFront = (index: number, degrees: number) => {
+    const a = (degrees * Math.PI) / 180;
+    const f = front(index);
+    expect(f.x).toBeCloseTo(Math.sin(a));
+    expect(f.y).toBeCloseTo(0);
+    expect(f.z).toBeCloseTo(Math.cos(a));
+  };
+  expectFront(0, 90 + 180);
+  expectFront(1, 0 + 180);
   const disposed = vi.fn();
   mesh.addEventListener('dispose', disposed);
   result.dispose();
