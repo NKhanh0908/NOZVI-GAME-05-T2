@@ -22,8 +22,8 @@ describe('officeLayout', () => {
 });
 
 describe('interactables', () => {
-  it('exposes 22 interactables including all chairs', () => {
-    expect(officeLayout.interactables).toHaveLength(22);
+  it('exposes 23 interactables including all chairs', () => {
+    expect(officeLayout.interactables).toHaveLength(23);
     expect(officeLayout.interactables.filter((i) => i.type === 'chair')).toHaveLength(8);
   });
   it('exposes two sofa seats and seat ids', () => {

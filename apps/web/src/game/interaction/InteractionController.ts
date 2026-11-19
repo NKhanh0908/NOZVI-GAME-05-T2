@@ -13,6 +13,7 @@ import {
 } from '@office/protocol';
 import type { SeatOccupancy } from '../../net/occupancy';
 import { MACHINE_IN_USE } from './extras';
+import { togglesOnE } from './openables';
 
 /** `progress` (0 to 1) draws a progress bar under the text (brewing, T-1154). */
 export type Prompt = { text: string; available: boolean; progress?: number } | null;
@@ -25,7 +26,8 @@ export interface PlayerLike {
   readonly brewProgress?: number;
 }
 export type InteractionHooks = {
-  onExit(): void;
+  /** E at the main door; the game swings it open, then leaves (REQ-INT-005). */
+  onExit(door: Interactable): void;
   /** Sends an activity request to the server; the result arrives in room state. */
   sendIntent(intent: IntentMessage): void;
   onAction?(target: Interactable): void;
@@ -33,6 +35,10 @@ export type InteractionHooks = {
   onTv?(): void;
   /** The employee brewing at the coffee machine (room state), or null when it is free. */
   brewer?(): string | null;
+  /** E at the cabinet or fridge: local open / close (REQ-INT-004, T-1156). */
+  onToggleOpen?(target: Interactable): void;
+  /** Local open state of a cabinet or fridge, for the prompt. */
+  isOpen?(id: string): boolean;
 };
 
 const LABELS: Record<string, string> = {
@@ -41,7 +47,13 @@ const LABELS: Record<string, string> = {
   water_dispenser: 'E — Drink water',
   sofa: 'E — Rest',
   storage_cabinet: 'E — Open cabinet',
+  fridge: 'E — Open fridge',
   TV: 'E — Watch TV',
+};
+/** Prompt while a cabinet or fridge is open (T-1156). */
+const CLOSE_LABELS: Record<string, string> = {
+  storage_cabinet: 'E — Close cabinet',
+  fridge: 'E — Close fridge',
 };
 const TARGETS = officeLayout.interactables.filter((i) => i.type !== 'computer');
 
@@ -104,21 +116,48 @@ export class InteractionController {
     if (a === 'working') return line('E — Stop working', 'WASD — Stand up');
     if (a === 'resting') return line(null, 'WASD — Stand up');
     const t = this.target();
-    if (!t) return line(null);
+    const label = t ? this.targetLabel(t) : null;
+    if (!label) return t?.type === 'chair' ? null : line(null);
+    if (!label.available) {
+      // Holding a coffee keeps its sip key next to "Desk taken"; a busy machine shows alone.
+      return t!.type === 'chair'
+        ? { ...line(label.text)!, available: false }
+        : { text: label.text, available: false };
+    }
+    return line(label.text);
+  }
+
+  /**
+   * T-1156: the interactable the prompt currently names, for the highlight. Null while
+   * seated, brewing or sipping, and when the faced target offers no action.
+   */
+  focusTarget(): Interactable | null {
+    const a = this.player.activity;
+    if (isSeated(a) || a === 'brewing') return null;
+    if (a === 'drinking' && this.player.item === 'coffee') return null;
+    const t = this.target();
+    return t && this.targetLabel(t) ? t : null;
+  }
+
+  /** The action text for a faced target, or null when it offers none right now. */
+  private targetLabel(t: Interactable): { text: string; available: boolean } | null {
     if (t.type === 'chair') {
       const seatId = deskSeatId(t);
       if (!seatId) return null;
-      if (this.seatFree(seatId)) return line('E — Sit');
-      return { ...line('Desk taken')!, available: false };
+      return this.seatFree(seatId)
+        ? { text: 'E — Sit', available: true }
+        : { text: 'Desk taken', available: false };
     }
     // Holding a coffee: no brew (empty hand only) and no water drink; F sips it.
     if (t.type === 'coffee_machine' || t.type === 'water_dispenser') {
-      if (this.player.item === 'coffee') return line(null);
+      if (this.player.item === 'coffee') return null;
       if (t.type === 'coffee_machine' && this.machineBusy()) {
         return { text: MACHINE_IN_USE, available: false };
       }
     }
-    return line(LABELS[t.type] ?? null);
+    const open = togglesOnE(t.type) && (this.hooks.isOpen?.(t.id) ?? false);
+    const text = open ? CLOSE_LABELS[t.type] : LABELS[t.type];
+    return text ? { text, available: true } : null;
   }
 
   press(): void {
@@ -136,11 +175,15 @@ export class InteractionController {
       return;
     }
     if (t.type === 'main_door') {
-      this.hooks.onExit();
+      this.hooks.onExit(t);
       return;
     }
     if (t.type === 'TV') {
       this.hooks.onTv?.();
+      return;
+    }
+    if (togglesOnE(t.type)) {
+      this.hooks.onToggleOpen?.(t);
       return;
     }
     this.hooks.onAction?.(t);

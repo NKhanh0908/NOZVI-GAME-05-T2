@@ -3,6 +3,19 @@ const WAVE_SECONDS = 1.6;
 
 export const BALANCE = {
   interaction: { facingConeDeg: 90 },
+  /**
+   * Client-only interaction feedback (REQ-INT-001/004/005, T-1156, plan phase-4.1 §3.5).
+   * The current target's materials get `highlight.color` as emissive at
+   * `highlight.intensity`. Cabinet, fridge and main-door leaves swing open by `openAngleDeg`
+   * over `openSeconds` (local only, never replicated); the door exit leaves the room
+   * `doorExitSeconds` after E so the swing is seen.
+   */
+  interactionView: {
+    highlight: { color: '#ffcf70', intensity: 0.35 },
+    openSeconds: 0.45,
+    openAngleDeg: { cabinet: 105, fridge: 100, door: 75 },
+    doorExitSeconds: 0.5,
+  },
   activity: { drinkSeconds: 2.5, waveSeconds: WAVE_SECONDS, crossFadeSeconds: 0.25 },
   /**
    * REQ-INT-003 coffee routine (plan phase-4.1 §3.4, §6.2). A sip lasts
