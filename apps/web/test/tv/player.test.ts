@@ -127,6 +127,56 @@ describe('FakeTvPlayer', () => {
   });
 });
 
+describe('YouTubeTvPlayer play waits for cued (T-1612, YouTube error 2)', () => {
+  async function readyPlayer() {
+    const yt = stubYouTube();
+    const p = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc);
+    p.load('AAAAAAAAAAA', 0);
+    yt.finishLoading();
+    await flush();
+    const [{ opts, api }] = yt.players as [(typeof yt.players)[number]];
+    opts.events.onReady();
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    return { p, opts, api };
+  }
+
+  it('on a ready player, load then play sends playVideo only after cued, exactly once', async () => {
+    const { p, opts, api } = await readyPlayer();
+    (api.playVideo as ReturnType<typeof vi.fn>).mockClear();
+    p.load('BBBBBBBBBBB', 3);
+    p.play();
+    expect(api.cueVideoById).toHaveBeenLastCalledWith({ videoId: 'BBBBBBBBBBB', startSeconds: 3 });
+    expect(api.playVideo).not.toHaveBeenCalled();
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    expect(api.playVideo).toHaveBeenCalledOnce();
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    expect(api.playVideo).toHaveBeenCalledOnce();
+  });
+
+  it('a pause or stop before cued cancels the held play', async () => {
+    const { p, opts, api } = await readyPlayer();
+    (api.playVideo as ReturnType<typeof vi.fn>).mockClear();
+    p.load('BBBBBBBBBBB', 0);
+    p.play();
+    p.pause();
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    expect(api.playVideo).not.toHaveBeenCalled();
+
+    p.load('CCCCCCCCCCC', 0);
+    p.play();
+    p.stop();
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    expect(api.playVideo).not.toHaveBeenCalled();
+  });
+
+  it('play after the video is cued goes straight to playVideo', async () => {
+    const { p, api } = await readyPlayer();
+    (api.playVideo as ReturnType<typeof vi.fn>).mockClear();
+    p.play();
+    expect(api.playVideo).toHaveBeenCalledOnce();
+  });
+});
+
 /** Stubbed IFrame API: records players, fires onReady on demand. */
 function stubYouTube() {
   const players: { el: unknown; opts: YtPlayerOptions; api: YtPlayer & Record<string, unknown> }[] =
@@ -228,13 +278,12 @@ describe('YouTubeTvPlayer', () => {
     opts.events.onReady();
     expect(api.mute).toHaveBeenCalledOnce();
     expect(api.cueVideoById).toHaveBeenCalledWith({ videoId: 'AAAAAAAAAAA', startSeconds: 7 });
+    // T-1612: playVideo in the same tick as cueVideoById makes YouTube answer error 2,
+    // so the play waits for the cued state.
+    expect(api.playVideo).not.toHaveBeenCalled();
+    opts.events.onStateChange({ data: YT_STATE.cued });
     expect(api.playVideo).toHaveBeenCalledOnce();
     expect(api.setPlaybackRate).not.toHaveBeenCalled();
-    // Order is kept: cue, then play.
-    const order = [api.cueVideoById, api.playVideo].map(
-      (f) => (f as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!,
-    );
-    expect(order).toEqual([...order].sort((x, y) => x - y));
     expect(p.isReady()).toBe(false);
     expect(p.getTime()).toBe(7); // the cued start until the video reports its position
 
