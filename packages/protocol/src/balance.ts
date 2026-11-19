@@ -165,6 +165,13 @@ export const BALANCE = {
     rateLimitCommands: 5,
     rateLimitWindowSeconds: 10,
   },
+  /** T-1568: client YouTube player robustness (presentation only, not synced). */
+  tvPlayer: {
+    /** The IFrame API script counts as failed after this long without becoming ready. */
+    iframeApiTimeoutMs: 15_000,
+    /** At most this many commands wait for the IFrame player; the oldest is dropped. */
+    playerQueueMax: 32,
+  },
   rendering: {
     /** 'agx' or 'aces' (THREE.AgXToneMapping / THREE.ACESFilmicToneMapping). */
     toneMapping: 'aces',
