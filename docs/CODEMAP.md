@@ -58,7 +58,7 @@ Avatar render cost (T-1161): `apps/web/src/game/avatar/mergeSkinned.ts` merges a
 
 Phase 4.1 emotes (T-1222): `apps/web/src/ui/EmoteMenu.tsx` (menu, rendered by `App.tsx`; `Game.emote` / `canEmote` / `focusGame`) → `InteractionController.emote` (G = `wave` emote) → server; playback from the replicated `emote` in `AvatarView.setEmote` (`EMOTE_SOURCE`: `Dance_Loop` clip, wave arm override, overlays in `avatar/overlays.ts`) for `Player` and `RemoteAvatars`. Tests: `apps/web/test/emoteMenu.test.tsx`, `avatarClips.test.ts`, `interactionController.test.ts`, e2e `emote.spec.ts`, `seats.spec.ts` (G wave).
 
-Assets: `apps/web/public/assets/` (`furniture/`, `food/` with `Textures/`, `avatars/`, `anim/`; licences in `CREDITS.md`); file names in `apps/web/src/game/assets/furnitureManifest.ts` (`FURNITURE` placed by `loadFurniture.ts`; `FURNITURE_PROPS`, `FOOD` not placed yet). Tests: `apps/web/test/furnitureManifest.test.ts` (every entry exists and is glTF 2.0 with its resources).
+Assets: `apps/web/public/assets/` (`furniture/`, `food/` with `Textures/`, `avatars/`, `anim/`; licences in `CREDITS.md`); file names in `apps/web/src/game/assets/furnitureManifest.ts` (`FURNITURE` placed by `loadFurniture.ts`, `MODEL_YAW` per-model yaw correction for models whose front is not +Z, T-1609; `FURNITURE_PROPS`, `FOOD` not placed yet). Tests: `apps/web/test/furnitureManifest.test.ts` (every entry exists and is glTF 2.0 with its resources).
 
 ## Do not read (generated, vendored or binary)
 
