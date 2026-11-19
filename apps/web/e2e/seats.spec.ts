@@ -190,23 +190,26 @@ test('two employees pressing E on one free desk: exactly one sits, no stuck stat
   await winner.keyboard.up('w');
 });
 
-test('coffee break, wave and sofa rest are seen remotely and end together', async () => {
+test('coffee brewing, wave and sofa rest are seen remotely and end together', async () => {
   test.setTimeout(180_000);
   // Ana starts in or near the desk aisle.
   await walkTo(ana, [[0, 2.1], [0, 0], ...TO_COFFEE]);
   await atCoffee(ana);
-  await expect(prompt(ana)).toHaveText('E — Take a break');
+  await expect(prompt(ana)).toHaveText('E — Make coffee');
 
+  // E at the machine brews (T-1154); the server ends it and hands over the coffee.
   await startTrace(ana, null);
   await startTrace(ben, 'Ana');
   await ana.keyboard.press('e');
-  await expect.poll(async () => (await remote(ben, 'Ana'))?.activity).toBe('drinking');
-  await expect(ben.getByTestId('game-host').getByText('Break', { exact: true })).toBeVisible();
+  await expect.poll(async () => (await remote(ben, 'Ana'))?.activity).toBe('brewing');
+  await expect(
+    ben.getByTestId('game-host').getByText('Making coffee', { exact: true }),
+  ).toBeVisible();
   await expect.poll(() => activity(ana), { timeout: 10_000 }).toBe('idle');
   await expect.poll(async () => (await remote(ben, 'Ana'))?.activity).toBe('idle');
-  const drinkA = endOf(await stopTrace(ana), 'drinking');
-  const drinkB = endOf(await stopTrace(ben), 'drinking');
-  expect(Math.abs(drinkA - drinkB)).toBeLessThan(500);
+  const brewA = endOf(await stopTrace(ana), 'brewing');
+  const brewB = endOf(await stopTrace(ben), 'brewing');
+  expect(Math.abs(brewA - brewB)).toBeLessThan(500);
 
   // G sends the `wave` emote (T-1222): a layer over the activity, which stays idle.
   await startTrace(ana, null, 'emote');
@@ -226,7 +229,8 @@ test('coffee break, wave and sofa rest are seen remotely and end together', asyn
 
   await walkTo(ana, COFFEE_TO_SOFA);
   await atSofa(ana);
-  await expect(prompt(ana)).toHaveText('E — Rest');
+  // Ana now holds the coffee, so the prompt also offers the sip.
+  await expect(prompt(ana)).toHaveText('E — Rest · F — Sip');
   await ana.keyboard.press('e');
   await expect.poll(() => activity(ana)).toBe('resting');
   await expect.poll(async () => (await remote(ben, 'Ana'))?.activity).toBe('resting');

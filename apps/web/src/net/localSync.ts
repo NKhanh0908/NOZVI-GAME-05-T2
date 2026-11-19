@@ -11,6 +11,9 @@ export type LocalSnapshot = ServerSnapshot & {
   readonly seatId: string;
   /** Running emote id ('' or absent = none; REQ-AVATAR-004). */
   readonly emote?: string;
+  /** Held item ('' or absent = empty hand) and sips left (REQ-INT-003). */
+  readonly item?: string;
+  readonly sips?: number;
 };
 
 /** The part of the joined room the local prediction uses; tests substitute a fake. */

@@ -122,7 +122,7 @@ describe('sit (criteria 1 and 2)', () => {
   });
 
   it('ignores a sit while drinking', () => {
-    const [x, , z] = coffee.interactionPoint;
+    const [x, , z] = water.interactionPoint;
     const s = setup({ a: body(x, z) });
     s.sim.intent('a', { type: 'drink' });
     s.tick();
@@ -235,11 +235,8 @@ describe('timed breaks and leaving (criterion 5)', () => {
   const drinkMs = BALANCE.activity.drinkSeconds * 1000;
   const waveMs = BALANCE.activity.waveSeconds * 1000;
 
-  it.each([
-    ['coffee machine', coffee],
-    ['water dispenser', water],
-  ])('drinking at the %s returns to idle after drinkSeconds', (_l, target) => {
-    const [x, , z] = target.interactionPoint;
+  it('drinking at the water dispenser returns to idle after drinkSeconds', () => {
+    const [x, , z] = water.interactionPoint;
     const s = setup({ a: body(x, z) });
     s.sim.intent('a', { type: 'drink' });
     s.at(1000);
@@ -247,6 +244,14 @@ describe('timed breaks and leaving (criterion 5)', () => {
     s.at(1000 + drinkMs - 1);
     expect(s.get('a').activity).toBe('drinking');
     s.at(1000 + drinkMs);
+    expect(s.get('a').activity).toBe('idle');
+  });
+
+  it('ignores an empty-hand drink at the coffee machine (it only brews; T-1154)', () => {
+    const [x, , z] = coffee.interactionPoint;
+    const s = setup({ a: body(x, z) });
+    s.sim.intent('a', { type: 'drink' });
+    s.tick();
     expect(s.get('a').activity).toBe('idle');
   });
 
@@ -269,7 +274,7 @@ describe('timed breaks and leaving (criterion 5)', () => {
   });
 
   it('cancels a break on movement and a stale timer never ends a later break early', () => {
-    const [x, , z] = coffee.interactionPoint;
+    const [x, , z] = water.interactionPoint;
     const s = setup({ a: body(x, z) });
     s.sim.intent('a', { type: 'drink' });
     s.at(0);
@@ -288,9 +293,10 @@ describe('timed breaks and leaving (criterion 5)', () => {
     expect(s.get('a').activity).toBe('idle');
   });
 
-  it('ignores drink and wave while seated', () => {
+  it('ignores an empty-hand drink and wave while seated', () => {
     const s = setup({ a: near(DESK) });
     s.sim.intent('a', { type: 'sit', seatId: DESK });
+    s.sim.intent('a', { type: 'drink' });
     s.sim.intent('a', { type: 'wave' });
     s.tick();
     expect(s.get('a').activity).toBe('sitting');
@@ -436,6 +442,92 @@ describe('coffee routine (REQ-INT-003)', () => {
     seated.sim.intent('a', { type: 'brew' });
     seated.at(50);
     expect(seated.get('a').activity).toBe('sitting');
+  });
+
+  /** Brews, then seats `a` at DESK holding a full coffee; the clock ends at brewMs + 50. */
+  const seatedWithCoffee = (seat = DESK) => {
+    const s = setup({ a: atMachine() });
+    brewed(s, 'a');
+    const [x, , z] = spots.get(seat)!.standPoint;
+    Object.assign(s.get('a'), { x, z });
+    s.sim.intent('a', { type: 'sit', seatId: seat });
+    s.at(brewMs + 50);
+    return s;
+  };
+
+  it.each([
+    ['sitting', DESK],
+    ['working', DESK],
+    ['resting', SOFA],
+  ] as const)('sips while %s: keeps the seat and returns to it', (seatedAs, seat) => {
+    // Owner decision 2026-11-17: lift the cup, sip, stay seated.
+    const s = seatedWithCoffee(seat);
+    let t = brewMs + 50;
+    if (seatedAs === 'working') {
+      s.sim.intent('a', { type: 'toggleWork' });
+      s.at((t += 50));
+    }
+    const pose = { x: s.get('a').x, z: s.get('a').z, heading: s.get('a').heading };
+    expect(s.get('a').activity).toBe(seatedAs);
+    s.sim.intent('a', { type: 'drink' });
+    s.at((t += 50));
+    expect(s.get('a')).toMatchObject({ activity: 'drinking', seatId: seat, sips: 3 });
+    expect(s.sim.activity.seats.occupant(seat)).toBe('a');
+    // Zero-axis inputs during the sip keep the seated pose.
+    s.sim.input('a', input(1));
+    s.at((t += 50));
+    expect(s.get('a')).toMatchObject({ activity: 'drinking', seatId: seat, ...pose });
+    s.at((t += drinkMs));
+    expect(s.get('a')).toMatchObject({ activity: seatedAs, seatId: seat, item: 'coffee', sips: 2 });
+  });
+
+  it('three seated sips empty the cup and the employee stays seated', () => {
+    const s = seatedWithCoffee();
+    let t = brewMs + 50;
+    for (const left of [2, 1, 0]) {
+      s.sim.intent('a', { type: 'drink' });
+      s.at((t += 50));
+      s.at((t += drinkMs));
+      expect(s.get('a')).toMatchObject({ activity: 'sitting', seatId: DESK, sips: left });
+    }
+    expect(s.get('a').item).toBe('');
+    // With the cup gone a seated drink is refused.
+    s.sim.intent('a', { type: 'drink' });
+    s.at((t += 50));
+    expect(s.get('a').activity).toBe('sitting');
+  });
+
+  it('standing up during a seated sip cancels it, costs nothing and frees the seat', () => {
+    const moved = seatedWithCoffee();
+    moved.sim.intent('a', { type: 'drink' });
+    moved.at(brewMs + 100);
+    moved.sim.input('a', input(1, { right: 1 }));
+    moved.at(brewMs + 150);
+    expect(moved.get('a')).toMatchObject({ activity: 'walking', seatId: '', sips: 3 });
+    expect(moved.sim.activity.seats.occupant(DESK)).toBeNull();
+    moved.at(brewMs + 150 + drinkMs);
+    expect(moved.get('a')).toMatchObject({ activity: 'walking', item: 'coffee', sips: 3 });
+
+    const stood = seatedWithCoffee();
+    stood.sim.intent('a', { type: 'drink' });
+    stood.at(brewMs + 100);
+    stood.sim.intent('a', { type: 'stand' });
+    stood.at(brewMs + 150);
+    const [sx, , sz] = deskSpot.standPoint;
+    expect(stood.get('a')).toMatchObject({ activity: 'idle', seatId: '', x: sx, z: sz, sips: 3 });
+    stood.at(brewMs + 150 + drinkMs);
+    expect(stood.get('a')).toMatchObject({ activity: 'idle', sips: 3 });
+  });
+
+  it('refuses toggling work, sitting elsewhere and emotes during a seated sip', () => {
+    const s = seatedWithCoffee();
+    s.sim.intent('a', { type: 'drink' });
+    s.at(brewMs + 100);
+    s.sim.intent('a', { type: 'toggleWork' });
+    s.sim.intent('a', { type: 'sit', seatId: DESK_2 });
+    s.sim.intent('a', { type: 'emote', emote: 'think' });
+    s.at(brewMs + 150);
+    expect(s.get('a')).toMatchObject({ activity: 'drinking', seatId: DESK, emote: '' });
   });
 
   it('keeps the cup while sitting and standing', () => {

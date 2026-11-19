@@ -70,7 +70,6 @@ describe('activity', () => {
   });
   it('drink with a cup takes one sip per finished drink; the last sip removes the cup', () => {
     expect(nextActivity('walking', { type: 'drink' }, 'coffee')).toBe('drinking');
-    expect(nextActivity('sitting', { type: 'drink' }, 'coffee')).toBe('sitting');
     let held: Held = nextHeld('brewing', EMPTY_HAND, { type: 'brewDone' });
     for (let left = BALANCE.coffee.sips - 1; left > 0; left--) {
       held = nextHeld('drinking', held, { type: 'actionDone' });
@@ -83,6 +82,27 @@ describe('activity', () => {
     expect(nextHeld('drinking', full, { type: 'move' })).toBe(full);
     // Waving with a cup does not drink from it.
     expect(nextHeld('waving', full, { type: 'actionDone' })).toBe(full);
+  });
+  it('a seated sip needs a coffee, keeps the seat and resumes the seated activity', () => {
+    // Owner decision 2026-11-17: lift the cup from the desk, sip, stay seated.
+    for (const seated of ['sitting', 'working', 'resting'] as const) {
+      expect(nextActivity(seated, { type: 'drink' }, 'coffee')).toBe('drinking');
+      expect(nextActivity(seated, { type: 'drink' }, '')).toBe(seated);
+      expect(nextActivity(seated, { type: 'drink' })).toBe(seated);
+      expect(nextActivity('drinking', { type: 'actionDone', resume: seated })).toBe(seated);
+    }
+    // Without `resume` a finished drink returns to idle (a standing sip or a water drink).
+    expect(nextActivity('drinking', { type: 'actionDone' })).toBe('idle');
+    // A seated sip counts like a standing one.
+    const held = nextHeld(
+      'drinking',
+      { item: 'coffee', sips: 2 },
+      {
+        type: 'actionDone',
+        resume: 'working',
+      },
+    );
+    expect(held).toEqual({ item: 'coffee', sips: 1 });
   });
   it('reads replicated item strings', () => {
     expect(toItem('coffee')).toBe('coffee');

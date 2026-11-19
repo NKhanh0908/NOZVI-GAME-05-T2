@@ -15,6 +15,9 @@ export type ReplicatedEmployee = {
   readonly connected?: boolean;
   /** Running emote id ('' or absent = none; REQ-AVATAR-004). */
   readonly emote?: string;
+  /** Held item ('' or absent = empty hand) and sips left (REQ-INT-003). */
+  readonly item?: string;
+  readonly sips?: number;
 };
 
 /** Add / remove / change notifications for `room.state.employees`; each returns an unsubscribe. */

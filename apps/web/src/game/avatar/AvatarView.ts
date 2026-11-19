@@ -1,11 +1,21 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { BALANCE, type Activity, type AvatarId, type EmoteId } from '@office/protocol';
+import {
+  BALANCE,
+  isSeated,
+  type Activity,
+  type AvatarId,
+  type EmoteId,
+  type Item,
+  type Vec3,
+} from '@office/protocol';
+import { HeldProp, propFor, propRest, type PropLoader, type PropState } from './HeldProp';
 import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
 import {
   EMOTE_OVERLAYS,
+  applySip,
   applyTyping,
   approach,
   dir,
@@ -23,7 +33,7 @@ export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   resting: { clip: 'Sitting_Idle_Loop', loop: true },
   drinking: { clip: 'Interact', loop: false },
   waving: { clip: 'Idle_Loop', loop: true }, // Arm is overridden procedurally.
-  brewing: { clip: 'Idle_Loop', loop: true }, // Placeholder; brewing feedback is Phase 4.1 task 10.
+  brewing: { clip: 'Idle_Loop', loop: true }, // Steam at the machine shows the brew (T-1154).
 };
 
 /**
@@ -95,6 +105,8 @@ export class AvatarView {
   private readonly actions = new Map<string, THREE.AnimationAction>();
   private current: THREE.AnimationAction | null = null;
   private activity: Activity = 'idle';
+  /** On a seat: the seated pose plays, also during a seated sip (`drinking` on the seat). */
+  private seated = false;
   private waveTime = 0;
   /** The view's own clock (s) for procedural overlays. */
   private clock = 0;
@@ -106,15 +118,23 @@ export class AvatarView {
   /** The overlay emote being shown or faded out, and its blend weight. */
   private overlay: OverlayEmote | null = null;
   private overlayWeight = 0;
+  /** Blend weight of the sip overlay while `drinking`, 0 to 1 (T-1154). */
+  private sipWeight = 0;
+  /** REQ-INT-003 (T-1154): the replicated held item and the cup's rest spot when seated. */
+  private item: Item = '';
+  private restSpot: Vec3 | null = null;
+  private readonly prop: HeldProp;
 
   private constructor(
     model: THREE.Object3D,
     private readonly bones: THREE.Bone[],
     clips: THREE.AnimationClip[],
     private readonly materials: THREE.Material[] = [],
+    loadProp?: PropLoader,
   ) {
     this.root.add(model);
     this.rig = findRig(bones);
+    this.prop = new HeldProp(this.root, this.rig.right?.hand ?? null, loadProp);
     this.mixer = new THREE.AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.play('idle');
@@ -126,7 +146,10 @@ export class AvatarView {
    * because players fade their own materials. A failed load is not cached, so a later call
    * retries.
    */
-  static async load(avatarId: AvatarId): Promise<AvatarView> {
+  static async load(
+    avatarId: AvatarId,
+    options: { loadProp?: PropLoader } = {},
+  ): Promise<AvatarView> {
     let template = templates.get(avatarId);
     if (!template) {
       template = loadTemplate(avatarId);
@@ -149,7 +172,7 @@ export class AvatarView {
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
     });
     const target = findSkinnedMesh(model)!;
-    return new AvatarView(model, target.skeleton.bones, clips, materials);
+    return new AvatarView(model, target.skeleton.bones, clips, materials, options.loadProp);
   }
 
   /** Test hook: forgets cached templates so the next load parses the GLB again. */
@@ -157,12 +180,15 @@ export class AvatarView {
     templates.clear();
   }
 
-  setActivity(a: Activity): void {
-    if (a === this.activity) return;
-    const wasSeated =
-      this.activity === 'sitting' || this.activity === 'working' || this.activity === 'resting';
-    const seated = a === 'sitting' || a === 'working' || a === 'resting';
+  /**
+   * `seated` is whether the employee is on a seat; it differs from the activity only during
+   * a seated sip (`drinking` on the seat, T-1154), which keeps the seated pose.
+   */
+  setActivity(a: Activity, seated: boolean = isSeated(a)): void {
+    if (a === this.activity && seated === this.seated) return;
+    const wasSeated = this.seated;
     this.activity = a;
+    this.seated = seated;
     if (a === 'waving') this.waveTime = BALANCE.activity.waveSeconds;
     if (seated && !wasSeated) this.playOnce('Sitting_Enter', a);
     else if (!seated && wasSeated) this.playOnce('Sitting_Exit', a);
@@ -189,8 +215,22 @@ export class AvatarView {
     return this.emote;
   }
 
+  /**
+   * REQ-INT-003 (T-1154): shows the held coffee (`item`) and, while seated, the world spot
+   * of the desk or coffee table the cup stands on. The prop follows in `update`.
+   */
+  setHeld(item: Item, restSpot: Vec3 | null): void {
+    this.item = item;
+    this.restSpot = restSpot;
+  }
+
+  /** The prop drawn now (null when none or still loading). */
+  get heldProp(): PropState | null {
+    return this.prop.state;
+  }
+
   private play(a: Activity): void {
-    const spec = CLIP_FOR[a];
+    const spec = this.seated && !isSeated(a) ? CLIP_FOR.sitting : CLIP_FOR[a];
     this.fadeTo(spec.clip, spec.loop);
   }
 
@@ -240,6 +280,9 @@ export class AvatarView {
       EMOTE_OVERLAYS[this.overlay](this.root, this.rig, this.clock, this.overlayWeight);
       if (this.overlayWeight === 0) this.overlay = null;
     }
+    // REQ-INT-003 (T-1154): the sip lifts the right hand to the mouth, standing or seated.
+    this.sipWeight = approach(this.sipWeight, this.activity === 'drinking' ? 1 : 0, dt, fade);
+    applySip(this.root, this.rig, this.sipWeight);
     const legacyWave = this.activity === 'waving' && this.waveTime > 0;
     if (legacyWave) this.waveTime -= dt;
     if (legacyWave || this.emote === 'wave') {
@@ -264,6 +307,13 @@ export class AvatarView {
         fore.updateWorldMatrix(false, true);
       }
     }
+    this.updateProp();
+  }
+
+  private updateProp(): void {
+    const kind = propFor(this.item, this.activity);
+    this.prop.set(kind, kind ? propRest(this.seated, this.activity, this.restSpot) : null);
+    this.prop.update();
   }
 
   private pointBone(bone: THREE.Bone, end: THREE.Object3D, direction: THREE.Vector3): void {
@@ -283,6 +333,7 @@ export class AvatarView {
    * textures belong to the shared per-avatar template and stay alive for later clones.
    */
   dispose(): void {
+    this.prop.dispose();
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.mixer.getRoot());
     this.root.removeFromParent();

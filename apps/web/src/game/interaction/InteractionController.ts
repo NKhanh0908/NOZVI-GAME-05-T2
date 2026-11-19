@@ -8,14 +8,21 @@ import {
   type EmoteId,
   type IntentMessage,
   type Interactable,
+  type Item,
   type PlayerState,
 } from '@office/protocol';
 import type { SeatOccupancy } from '../../net/occupancy';
+import { MACHINE_IN_USE } from './extras';
 
-export type Prompt = { text: string; available: boolean } | null;
+/** `progress` (0 to 1) draws a progress bar under the text (brewing, T-1154). */
+export type Prompt = { text: string; available: boolean; progress?: number } | null;
 export interface PlayerLike {
   state: PlayerState;
   activity: Activity;
+  /** Held item as the server reports it ('' or absent = empty hand; REQ-INT-003). */
+  readonly item?: Item;
+  /** Brewing progress from 0 to 1 while `brewing`. */
+  readonly brewProgress?: number;
 }
 export type InteractionHooks = {
   onExit(): void;
@@ -24,12 +31,14 @@ export type InteractionHooks = {
   onAction?(target: Interactable): void;
   /** E at the TV opens TV mode (REQ-TV-002). */
   onTv?(): void;
+  /** The employee brewing at the coffee machine (room state), or null when it is free. */
+  brewer?(): string | null;
 };
 
 const LABELS: Record<string, string> = {
   main_door: 'E — Leave office',
-  coffee_machine: 'E — Take a break',
-  water_dispenser: 'E — Take a break',
+  coffee_machine: 'E — Make coffee',
+  water_dispenser: 'E — Drink water',
   sofa: 'E — Rest',
   storage_cabinet: 'E — Open cabinet',
   TV: 'E — Watch TV',
@@ -63,22 +72,53 @@ export class InteractionController {
     return holder === null || holder === this.ownerId;
   }
 
+  /** True while another employee brews at the coffee machine (REQ-INT-003). */
+  machineBusy(): boolean {
+    const brewer = this.hooks.brewer?.() ?? null;
+    return brewer !== null && brewer !== this.ownerId;
+  }
+
+  /** True when F would take a sip now (holding a coffee, standing or seated). */
+  canSip(): boolean {
+    const a = this.player.activity;
+    return this.player.item === 'coffee' && nextActivity(a, { type: 'drink' }, 'coffee') !== a;
+  }
+
   currentPrompt(): Prompt {
     const a = this.player.activity;
-    if (a === 'sitting') return { text: 'E — Start working · WASD — Stand up', available: true };
-    if (a === 'working') return { text: 'E — Stop working · WASD — Stand up', available: true };
-    if (a === 'resting') return { text: 'WASD — Stand up', available: true };
+    const sip = this.canSip() ? 'F — Sip' : null;
+    /** `parts` joined with ' · ', with the sip key after the first part when it applies. */
+    const line = (first: string | null, ...rest: string[]): Prompt => {
+      const parts = [first, sip, ...rest].filter((p): p is string => p !== null);
+      return parts.length > 0 ? { text: parts.join(' · '), available: true } : null;
+    };
+    if (a === 'brewing') {
+      const progress = this.player.brewProgress ?? 0;
+      const percent = Math.floor(progress * 20) * 5;
+      return { text: `Brewing coffee… ${percent}% · WASD — Cancel`, available: true, progress };
+    }
+    if (a === 'drinking' && this.player.item === 'coffee') {
+      return { text: 'Sipping…', available: true };
+    }
+    if (a === 'sitting') return line('E — Start working', 'WASD — Stand up');
+    if (a === 'working') return line('E — Stop working', 'WASD — Stand up');
+    if (a === 'resting') return line(null, 'WASD — Stand up');
     const t = this.target();
-    if (!t) return null;
+    if (!t) return line(null);
     if (t.type === 'chair') {
       const seatId = deskSeatId(t);
       if (!seatId) return null;
-      return this.seatFree(seatId)
-        ? { text: 'E — Sit', available: true }
-        : { text: 'Desk taken', available: false };
+      if (this.seatFree(seatId)) return line('E — Sit');
+      return { ...line('Desk taken')!, available: false };
     }
-    const label = LABELS[t.type];
-    return label ? { text: label, available: true } : null;
+    // Holding a coffee: no brew (empty hand only) and no water drink; F sips it.
+    if (t.type === 'coffee_machine' || t.type === 'water_dispenser') {
+      if (this.player.item === 'coffee') return line(null);
+      if (t.type === 'coffee_machine' && this.machineBusy()) {
+        return { text: MACHINE_IN_USE, available: false };
+      }
+    }
+    return line(LABELS[t.type] ?? null);
   }
 
   press(): void {
@@ -104,6 +144,16 @@ export class InteractionController {
       return;
     }
     this.hooks.onAction?.(t);
+  }
+
+  /**
+   * F: one sip of the held coffee (REQ-INT-003, T-1154), standing or seated (owner decision
+   * 2026-11-17). Returns whether the intent was sent; the server still decides.
+   */
+  sip(): boolean {
+    if (!this.canSip()) return false;
+    this.hooks.sendIntent({ type: 'drink' });
+    return true;
   }
 
   /**

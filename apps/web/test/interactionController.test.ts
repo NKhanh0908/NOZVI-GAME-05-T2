@@ -139,4 +139,66 @@ describe('InteractionController', () => {
     p.state = { x: -5.0, z: -0.9, heading: Math.PI / 2 };
     expect(c.currentPrompt()).toBeNull();
   });
+
+  describe('coffee (REQ-INT-003, T-1154)', () => {
+    const coffee = (activity: Activity = 'idle', state = { x: 0, z: -2.4, heading: 0 }) => {
+      const p = { state, activity, item: 'coffee' as const, brewProgress: 0 };
+      const sent: IntentMessage[] = [];
+      const c = new InteractionController(p, new SeatRegistry(), 'me', {
+        onExit: vi.fn(),
+        sendIntent: (i) => sent.push(i),
+      });
+      return { p, c, sent };
+    };
+
+    it('offers F — Sip while holding a cup and sends drink on sip()', () => {
+      const { c, sent } = coffee();
+      expect(c.currentPrompt()).toEqual({ text: 'F — Sip', available: true });
+      expect(c.sip()).toBe(true);
+      expect(sent).toEqual([{ type: 'drink' }]);
+    });
+
+    it('offers the seated sip next to work and stand-up keys (owner decision 2026-11-17)', () => {
+      expect(coffee('sitting').c.currentPrompt()?.text).toBe(
+        'E — Start working · F — Sip · WASD — Stand up',
+      );
+      expect(coffee('working').c.currentPrompt()?.text).toBe(
+        'E — Stop working · F — Sip · WASD — Stand up',
+      );
+      expect(coffee('resting').c.currentPrompt()?.text).toBe('F — Sip · WASD — Stand up');
+      const seated = coffee('working');
+      expect(seated.c.sip()).toBe(true);
+      expect(seated.sent).toEqual([{ type: 'drink' }]);
+    });
+
+    it('sends no sip without a cup, while sipping or while brewing', () => {
+      const { p, c, sent } = setup({ x: 0, z: -2.4, heading: 0 });
+      expect(c.canSip()).toBe(false);
+      expect(c.sip()).toBe(false);
+      p.activity = 'sitting';
+      expect(c.currentPrompt()?.text).toBe('E — Start working · WASD — Stand up');
+      for (const a of ['drinking', 'brewing', 'waving'] as const) {
+        const held = coffee(a);
+        expect(held.c.sip()).toBe(false);
+        expect(held.sent).toEqual([]);
+      }
+      expect(coffee('drinking').c.currentPrompt()).toEqual({ text: 'Sipping…', available: true });
+      expect(sent).toEqual([]);
+    });
+
+    it('shows brewing progress in steps of 5 % with a progress value', () => {
+      const { p, c } = coffee('brewing');
+      Object.assign(p, { item: '', brewProgress: 0.42 });
+      expect(c.currentPrompt()).toEqual({
+        text: 'Brewing coffee… 40% · WASD — Cancel',
+        available: true,
+        progress: 0.42,
+      });
+    });
+
+    it('at the machine with a cup in hand offers only the sip', () => {
+      const { c } = coffee('idle', { x: 2.35, z: -2.75, heading: Math.PI });
+      expect(c.currentPrompt()).toEqual({ text: 'F — Sip', available: true });
+    });
+  });
 });

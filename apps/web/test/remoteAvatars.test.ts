@@ -4,6 +4,7 @@ import type { Activity } from '@office/protocol';
 import type { EmployeeSource, ReplicatedEmployee } from '../src/net';
 import { RemoteAvatars, type RemoteView } from '../src/game/remote/RemoteAvatars';
 import { activityLabel } from '../src/game/hud/activityLabel';
+import { cupRestSpot } from '../src/game/interaction/seats';
 
 type Employee = { -readonly [K in keyof ReplicatedEmployee]: ReplicatedEmployee[K] };
 
@@ -301,6 +302,62 @@ describe('RemoteAvatars (REQ-NET-004, REQ-UI-001)', () => {
     t.remotes.dispose();
     expect(t.remotes.count).toBe(0);
     expect(t.source.add).toBeUndefined();
+  });
+});
+
+describe('RemoteAvatars coffee (REQ-INT-003, T-1154)', () => {
+  it('passes the held item with the seat rest spot to the view and lists item and sips', async () => {
+    const t = setup();
+    const held: [string, unknown][] = [];
+    const seatedFlags: (boolean | undefined)[] = [];
+    t.loadView.mockImplementationOnce(async () => {
+      const v = fakeView();
+      v.setActivity = (a, seated) => {
+        v.activities.push(a);
+        seatedFlags.push(seated);
+      };
+      Object.assign(v, {
+        setHeld: (item: string, rest: unknown) => held.push([item, rest]),
+        heldProp: { kind: 'cup', place: 'hand' },
+      });
+      t.views.push(v);
+      return v;
+    });
+    const ann: Employee = { ...t.employee('Ann'), item: 'coffee', sips: 3 };
+    t.source.add!('a', ann);
+    await Promise.resolve();
+    await Promise.resolve();
+    t.remotes.update(0.016);
+    expect(held.at(-1)).toEqual(['coffee', null]);
+    expect(seatedFlags.at(-1)).toBe(false);
+    expect(t.remotes.list()[0]).toMatchObject({
+      item: 'coffee',
+      sips: 3,
+      prop: { kind: 'cup', place: 'hand' },
+    });
+
+    // Seated (also during a seated sip): the cup's rest spot comes from the seat.
+    t.source.change(ann, { seatId: 'ws_7_seat', activity: 'drinking', sips: 2 });
+    t.remotes.update(0.016);
+    expect(seatedFlags.at(-1)).toBe(true);
+    expect(held.at(-1)![1]).toEqual(cupRestSpot('ws_7_seat'));
+    expect(t.remotes.list()[0]).toMatchObject({ activity: 'drinking', sips: 2 });
+
+    t.source.change(ann, { item: '', sips: 0, activity: 'sitting' });
+    t.remotes.update(0.016);
+    expect(held.at(-1)![0]).toBe('');
+    expect(t.remotes.list()[0]).toMatchObject({ item: '', sips: 0 });
+  });
+
+  it('reports a remote employee brewing (steam at the machine)', async () => {
+    const t = setup();
+    const ann = t.employee('Ann');
+    t.source.add!('a', ann);
+    t.remotes.update(0.016);
+    expect(t.remotes.someoneBrewing()).toBe(false);
+    t.source.change(ann, { activity: 'brewing' });
+    t.remotes.update(0.016);
+    expect(t.remotes.someoneBrewing()).toBe(true);
   });
 });
 

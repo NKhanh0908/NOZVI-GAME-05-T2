@@ -28,6 +28,10 @@ const near = (seatId: string) => {
   return body(x, z);
 };
 const atMachine = () => body(coffee.interactionPoint[0], coffee.interactionPoint[2]);
+const water = officeLayout.interactables.find((i) => i.type === 'water_dispenser')!;
+/** Where `start` works with an empty hand: drink at the water dispenser, the rest at the machine. */
+const atPantry = (start: 'drink' | 'wave' | 'brew') =>
+  start === 'drink' ? body(water.interactionPoint[0], water.interactionPoint[2]) : atMachine();
 
 function setup(entries: Record<string, ActivityBody>) {
   const sim = new OfficeSim();
@@ -148,7 +152,7 @@ describe('emote gap, allowed states and movement (criterion 2)', () => {
   });
 
   it.each(['drink', 'wave', 'brew'] as const)('refuses every emote after %s starts', (start) => {
-    const s = setup({ a: atMachine() });
+    const s = setup({ a: atPantry(start) });
     s.sim.intent('a', { type: start });
     s.at(0);
     const before = { ...s.get('a') };
@@ -196,7 +200,7 @@ describe('emote gap, allowed states and movement (criterion 2)', () => {
   });
 
   it.each(['drink', 'wave', 'brew'] as const)('ends an emote when %s starts', (next) => {
-    const s = setup({ a: atMachine() });
+    const s = setup({ a: atPantry(next) });
     s.sim.intent('a', { type: 'emote', emote: 'think' });
     s.at(0);
     s.sim.intent('a', { type: next });

@@ -5,7 +5,12 @@ export type SeatOccupancy = { occupant(seatId: string): string | null };
 export type OccupancyRoom = {
   readonly state?: {
     readonly employees?: {
-      forEach(callback: (employee: { readonly seatId: string }, sessionId: string) => void): void;
+      forEach(
+        callback: (
+          employee: { readonly seatId: string; readonly activity?: string },
+          sessionId: string,
+        ) => void,
+      ): void;
     };
   };
 };
@@ -24,5 +29,20 @@ export function roomOccupancy(room: OccupancyRoom): SeatOccupancy {
       });
       return holder;
     },
+  };
+}
+
+/**
+ * REQ-INT-003 (T-1154): the employee brewing at the coffee machine, read from replicated
+ * room state, or null when the machine is free. The server sends no refusal for a busy
+ * machine, so the client shows "Machine in use" from this.
+ */
+export function roomBrewer(room: OccupancyRoom): () => string | null {
+  return () => {
+    let brewer: string | null = null;
+    room.state?.employees?.forEach((employee, sessionId) => {
+      if (brewer === null && employee.activity === 'brewing') brewer = sessionId;
+    });
+    return brewer;
   };
 }

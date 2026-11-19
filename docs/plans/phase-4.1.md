@@ -156,6 +156,8 @@ Food Kit models use one textured primitive each and reference `Textures/colormap
 - The machine serves one employee at a time; a second E while it is busy is refused with a short prompt. There is no inventory, no beans or water level and no dirty cups (§7).
 - The water dispenser keeps its single-step drink and gains a visible glass during the drink.
 
+**Task 10 result (T-1154, 2026-11-19).** E at the machine brews (progress prompt, steam while anyone brews, "Machine in use" from replicated state); the cup is drawn in the right hand and on the desk or coffee table while seated, on local and remote avatars; F sips, also seated (owner decision 2026-11-17, added to the protocol and server rules; the coffee machine lost its one-step drink, `PROTOCOL_VERSION` 6). Draw calls on the observing page in e2e quality (`coffee.spec.ts`): 64 before, 65 while brewing (steam), 65 with the cup in view (+108 triangles). Choices in DECISIONS 2026-11-19.
+
 ### 3.5 Interaction feedback
 
 - The current interaction target gets a visible highlight, and the prompt shows the key and the action name.
