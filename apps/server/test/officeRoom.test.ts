@@ -565,6 +565,37 @@ describe('OfficeRoom shared TV (REQ-TV-004, REQ-TV-005, REQ-NFR-005)', () => {
     expect(notices).toHaveLength(1);
   });
 
+  it('answers tv_time with the server clock; invalid and over-budget requests get no reply (T-1567)', async () => {
+    const a = (await join('tv-04')) as Room<OfficeState>;
+    const replies: unknown[] = [];
+    const notices: unknown[] = [];
+    a.onMessage(SERVER_MSG.tvTime, (r: unknown) => replies.push(r));
+    a.onMessage(SERVER_MSG.tvRateLimited, (n: unknown) => notices.push(n));
+
+    a.send(MSG.tvTime, { id: -1 });
+    a.send(MSG.tvTime, { id: 'x' });
+    a.send(MSG.tvTime, {});
+    a.send(MSG.tvTime, { id: 1 });
+    await waitFor(() => replies.length === 1);
+    expect(replies[0]).toEqual({ id: 1, serverNow: tvNow });
+
+    for (let id = 2; id <= BALANCE.tv.timeRequestsPerWindow + 1; id++) {
+      a.send(MSG.tvTime, { id });
+    }
+    await waitFor(() => replies.length === BALANCE.tv.timeRequestsPerWindow);
+    // A TV command afterwards is answered normally: the budgets are separate.
+    a.send(MSG.tv, { type: 'load', videoId: VIDEO });
+    await waitFor(() => a.state.tv?.videoId === VIDEO);
+    expect(replies.map((r) => (r as { id: number }).id)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(notices).toEqual([]);
+
+    // The window slides: one more sample is answered.
+    tvNow += BALANCE.tv.rateLimitWindowSeconds * 1000;
+    a.send(MSG.tvTime, { id: 99 });
+    await waitFor(() => replies.length === BALANCE.tv.timeRequestsPerWindow + 1);
+    expect(replies.at(-1)).toEqual({ id: 99, serverNow: tvNow });
+  });
+
   it('keeps playback for others with controllerSessionId null when the controller leaves', async () => {
     const a = (await join('tv-03')) as Room<OfficeState>;
     const b = (await join('tv-03', { name: 'Bao' })) as Room<OfficeState>;

@@ -164,6 +164,13 @@ export const BALANCE = {
     /** REQ-NFR-005: at most rateLimitCommands TV commands per rateLimitWindowSeconds per client. */
     rateLimitCommands: 5,
     rateLimitWindowSeconds: 10,
+    /**
+     * OQ-023 (T-1567): `tv_time` clock samples a client takes on every join or reconnect,
+     * one after the other; the tightest (largest) lower bound wins.
+     */
+    clockSamplesOnJoin: 3,
+    /** OQ-023: at most this many `tv_time` requests per rateLimitWindowSeconds per client. */
+    timeRequestsPerWindow: 6,
   },
   rendering: {
     /** 'agx' or 'aces' (THREE.AgXToneMapping / THREE.ACESFilmicToneMapping). */

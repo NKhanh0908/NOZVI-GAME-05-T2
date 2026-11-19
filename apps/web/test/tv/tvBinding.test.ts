@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TvCommand, TvRateLimitedNotice } from '@office/protocol';
+import {
+  BALANCE,
+  MSG,
+  SERVER_MSG,
+  type TvCommand,
+  type TvRateLimitedNotice,
+  type TvTimeRequest,
+} from '@office/protocol';
 import { FakeTvPlayer } from '../../src/tv/player';
 import { TV_SYNC_INTERVAL_MS, TvBinding, type TvRoom } from '../../src/tv/TvBinding';
 
@@ -16,11 +23,16 @@ type Tv = {
   controllerSessionId?: string | null;
 };
 
-/** Fake room: tests write `state.tv` and call `patch()`; sent commands are recorded. */
+/**
+ * Fake room: tests write `state.tv` and call `patch()`; sent TV commands and `tv_time`
+ * requests are recorded; `notice()` and `timeReply()` deliver server messages.
+ */
 function fakeRoom(sessionId = 'me', tv: Partial<Tv> = {}) {
   const listeners = new Set<(s: { tv?: Tv }) => void>();
   const notices = new Set<(n: TvRateLimitedNotice) => void>();
+  const timeReplies = new Set<(reply: unknown) => void>();
   const sent: TvCommand[] = [];
+  const timeRequests: TvTimeRequest[] = [];
   const state: { tv: Tv; employees?: Map<string, object> } = {
     tv: { provider: 'youtube', status: 'idle', currentTime: 0, updatedAt: 0, ...tv },
   };
@@ -33,16 +45,24 @@ function fakeRoom(sessionId = 'me', tv: Partial<Tv> = {}) {
   const room: TvRoom = {
     sessionId,
     state,
-    send: (_type, cmd) => sent.push(cmd),
+    send: (type: string, payload: unknown) => {
+      if (type === MSG.tvTime) timeRequests.push(payload as TvTimeRequest);
+      else sent.push(payload as TvCommand);
+    },
     onStateChange,
-    onMessage: (_type, cb) => {
-      notices.add(cb);
-      return () => notices.delete(cb);
+    onMessage: (type: string, cb: (payload: never) => void) => {
+      const set = (type === SERVER_MSG.tvTime ? timeReplies : notices) as Set<typeof cb>;
+      set.add(cb);
+      return () => set.delete(cb);
     },
   };
   return {
     room,
     sent,
+    timeRequests,
+    timeReply(reply: unknown) {
+      for (const l of [...timeReplies]) l(reply);
+    },
     state,
     listeners,
     patch(next: Partial<Tv>) {
@@ -299,6 +319,94 @@ describe('TvBinding drift and clock (REQ-TV-006, OQ-023)', () => {
     r.patch({ status: 'playing', currentTime: 64, updatedAt: h.server() });
     h.advance(2000, false);
     expect(h.binding.expected()).toBeCloseTo(66, 6);
+  });
+
+  /** Answers the pending `tv_time` request: `upMs` to the server, `downMs` back. */
+  function answerTime(
+    h: ReturnType<typeof harness>,
+    r: ReturnType<typeof fakeRoom>,
+    upMs: number,
+    downMs: number,
+  ) {
+    const { id } = r.timeRequests.at(-1)!;
+    h.advance(upMs, false);
+    const serverNow = h.server();
+    h.advance(downMs, false);
+    r.timeReply({ id, serverNow });
+  }
+
+  it.each([1500, -1500])(
+    'a late joiner with a local clock %i ms off the server learns the offset on join (T-1567)',
+    (skewMs) => {
+      const h = harness({ offsetMs: skewMs });
+      h.advance(10_000, false);
+      // The video started 10 s ago by the server clock; this page joins now.
+      const updatedAt = h.server() - 10_000;
+      const r = fakeRoom('late', { videoId: ID_A, status: 'playing', currentTime: 4, updatedAt });
+      h.binding.attach(r.room);
+      // Before any sample the local clock stands in: the player is off by the skew.
+      expect(h.binding.clock.offsetMs).toBe(0);
+      expect(h.player.getTime()).toBeCloseTo(14 - skewMs / 1000, 6);
+      expect(r.timeRequests).toEqual([{ id: 1 }]);
+
+      // Three samples, one after the other, with uneven 30-80 ms one-way delays.
+      answerTime(h, r, 30, 80);
+      answerTime(h, r, 40, 30);
+      answerTime(h, r, 50, 60);
+      expect(r.timeRequests).toHaveLength(BALANCE.tv.clockSamplesOnJoin);
+      // The tightest lower bound: the 30 ms return trip.
+      expect(h.binding.clock.offsetMs).toBe(skewMs - 30);
+      expect(Math.abs(h.binding.clock.offsetMs - skewMs)).toBeLessThanOrEqual(100);
+      // No TV command was sent or received, yet the player follows the server clock.
+      expect(r.sent).toEqual([]);
+      const truth = 4 + (h.server() - updatedAt) / 1000;
+      expect(Math.abs(h.binding.expected()! - truth)).toBeLessThanOrEqual(0.1);
+      expect(Math.abs(h.player.getTime() - truth)).toBeLessThanOrEqual(0.1);
+      // The drift sync now agrees: no nudge or seek on the next check.
+      h.advance(TV_SYNC_INTERVAL_MS);
+      expect(h.player.state.rate).toBe(1);
+      expect(Math.abs(h.player.getTime() - (4 + (h.server() - updatedAt) / 1000))).toBeLessThan(
+        0.1,
+      );
+    },
+  );
+
+  it('a tv_time reply before the first snapshot sets the offset the snapshot uses', () => {
+    const h = harness({ offsetMs: -1500 });
+    h.advance(10_000, false);
+    const r = fakeRoom('late');
+    r.state.employees = new Map();
+    h.binding.attach(r.room);
+    answerTime(h, r, 20, 20);
+    expect(h.binding.clock.offsetMs).toBe(-1520);
+    r.state.employees.set('late', {});
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() - 10_000 });
+    expect(h.player.getTime()).toBeCloseTo(9.98, 6);
+  });
+
+  it('ignores unmatched, invalid and post-detach tv_time replies; asks again on attach', () => {
+    const h = harness({ offsetMs: 2000 });
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    r.timeReply({ id: 7, serverNow: h.server() });
+    r.timeReply({ id: 1, serverNow: 'soon' });
+    r.timeReply(null);
+    expect(h.binding.clock.offsetMs).toBe(0);
+    expect(r.timeRequests).toHaveLength(1);
+    answerTime(h, r, 10, 10);
+    expect(h.binding.clock.offsetMs).toBe(1990);
+    // A late duplicate of an answered request changes nothing.
+    r.timeReply({ id: 1, serverNow: h.server() + 5000 });
+    expect(h.binding.clock.offsetMs).toBe(1990);
+
+    h.binding.detach();
+    r.timeReply({ id: 2, serverNow: h.server() + 5000 });
+    expect(h.binding.clock.offsetMs).toBe(1990);
+    expect(r.timeRequests).toHaveLength(2);
+
+    const again = fakeRoom();
+    h.binding.attach(again.room);
+    expect(again.timeRequests).toEqual([{ id: 3 }]);
   });
 
   it('waits for the full state when attached before it arrived (Colyseus join order)', () => {
