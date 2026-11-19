@@ -102,6 +102,20 @@ export const BALANCE = {
      * fingers close `grip` of the way to the fist again.
      */
     hands: { curl: 0.2, grip: 0.85 },
+    /**
+     * FEAT-143 load-time look (`avatar/look.ts`): smoothed normals with edges sharper than
+     * `creaseAngle` (rad) kept hard, material roughness at least `roughness`; brows flattened
+     * to `browFlatten` of their height, lifted `browLift` m and `browFade` of the way to the
+     * skin colour; eyes `eyeOpen` times taller.
+     */
+    look: {
+      creaseAngle: 1.2,
+      roughness: 0.6,
+      browFlatten: 0.6,
+      browLift: 0.003,
+      browFade: 0.3,
+      eyeOpen: 1.15,
+    },
     /** REQ-AVATAR-004 emote overlays (T-1222); angles in radians, rates in Hz. */
     emote: {
       think: { headNod: 0.3 },

@@ -18,6 +18,7 @@ import {
   type PropLoader,
   type PropState,
 } from './HeldProp';
+import { softenAvatar, softenMaterial } from './look';
 import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
 import type { SeatKind } from '../interaction/seats';
@@ -167,7 +168,15 @@ async function loadTemplate(avatarId: AvatarId): Promise<Template> {
   });
   // T-1161: one skinned mesh per avatar (1 draw call per pass instead of 10); the parts share
   // one skeleton and differ only in colour. Unmergeable assets stay as they are.
+  // FEAT-143: smooth shading and a softer face, before the parts are merged.
+  softenAvatar(gltf.scene);
   mergeSkinnedMeshes(gltf.scene);
+  gltf.scene.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      softenMaterial(m);
+  });
   return { scene: gltf.scene, clips, sit: measureSit(gltf.scene, target, clips), fist };
 }
 
