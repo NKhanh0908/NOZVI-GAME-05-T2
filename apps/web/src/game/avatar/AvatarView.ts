@@ -22,6 +22,7 @@ import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
 import {
   EMOTE_OVERLAYS,
+  applyBrew,
   applySip,
   applyTyping,
   approach,
@@ -40,7 +41,7 @@ export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   resting: { clip: 'Sitting_Idle_Loop', loop: true },
   drinking: { clip: 'Interact', loop: false },
   waving: { clip: 'Idle_Loop', loop: true }, // Arm is overridden procedurally.
-  brewing: { clip: 'Idle_Loop', loop: true }, // Steam at the machine shows the brew (T-1154).
+  brewing: { clip: 'Idle_Loop', loop: true }, // Make-coffee overlay on top (T-1611).
 };
 
 /**
@@ -127,6 +128,8 @@ export class AvatarView {
   private overlayWeight = 0;
   /** Blend weight of the sip overlay while `drinking`, 0 to 1 (T-1154). */
   private sipWeight = 0;
+  /** Blend weight of the make-coffee overlay while `brewing`, 0 to 1 (T-1611). */
+  private brewWeight = 0;
   /** REQ-INT-003 (T-1154): the replicated held item and the cup's rest spot when seated. */
   private item: Item = '';
   private restSpot: Vec3 | null = null;
@@ -277,6 +280,11 @@ export class AvatarView {
     return this.typingWeight;
   }
 
+  /** Make-coffee overlay weight (0 to 1, T-1611); e2e reads it through the dev hooks. */
+  get brew(): number {
+    return this.brewWeight;
+  }
+
   update(dt: number): void {
     this.mixer.update(dt);
     this.clock += dt;
@@ -292,6 +300,10 @@ export class AvatarView {
       EMOTE_OVERLAYS[this.overlay](this.root, this.rig, this.clock, this.overlayWeight);
       if (this.overlayWeight === 0) this.overlay = null;
     }
+    // REQ-INT-003 (T-1611): making coffee at the machine; an emote takes the arms over.
+    const brewing = this.activity === 'brewing' && this.emote === '' ? 1 : 0;
+    this.brewWeight = approach(this.brewWeight, brewing, dt, fade);
+    applyBrew(this.root, this.rig, this.clock, this.brewWeight);
     // REQ-INT-003 (T-1154): the sip lifts the right hand to the mouth, standing or seated.
     this.sipWeight = approach(this.sipWeight, this.activity === 'drinking' ? 1 : 0, dt, fade);
     applySip(this.root, this.rig, this.sipWeight);

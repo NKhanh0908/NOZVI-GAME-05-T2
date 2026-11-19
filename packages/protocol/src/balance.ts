@@ -39,6 +39,11 @@ export const BALANCE = {
   avatar: {
     /** REQ-AVATAR-002 typing while `working` (T-1219): alternating taps, Hz per hand. */
     typing: { tapHz: 3.5, tapDepth: 0.35, reach: 0.6, elbowOut: 0.18, handsIn: 0.32 },
+    /**
+     * REQ-INT-003 make-coffee motion while `brewing` (T-1611): both hands at the machine,
+     * the right hand presses `pressHz` times a second, dipping by `pressDepth`.
+     */
+    brew: { pressHz: 0.8, pressDepth: 0.55, reach: 1.2, elbowOut: 0.2, handsIn: 0.3 },
     /** REQ-AVATAR-004 emote overlays (T-1222); angles in radians, rates in Hz. */
     emote: {
       think: { headNod: 0.3 },
