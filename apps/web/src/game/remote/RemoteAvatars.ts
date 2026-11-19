@@ -17,7 +17,7 @@ import {
   type ReplicatedEmployee,
 } from '../../net';
 import { AvatarView, CLIP_FOR } from '../avatar/AvatarView';
-import { cupRestSpot, seatPose, seatSocket } from '../interaction/seats';
+import { cupRestSpot, seatPose, seatSocket, type SeatKind } from '../interaction/seats';
 import type { PropState } from '../avatar/HeldProp';
 import { Nameplate } from '../hud/Nameplate';
 import { presenceLabel } from '../hud/activityLabel';
@@ -27,6 +27,8 @@ export type RemoteView = {
   readonly root: THREE.Object3D;
   /** `seated`: on a seat, also during a seated sip (T-1154). */
   setActivity(activity: Activity, seated?: boolean): void;
+  /** Optional so test fakes stay small; `AvatarView` implements it (T-1614). */
+  setSeat?(kind: SeatKind | null): void;
   /** Optional so test fakes stay small; `AvatarView` implements it (T-1154). */
   setHeld?(item: Item, restSpot: Vec3 | null): void;
   readonly heldProp?: PropState | null;
@@ -266,7 +268,9 @@ export class RemoteAvatars {
         remote.view = view;
         view.root.traverse((o) => (o.castShadow = false));
         group.add(view.root);
-        view.setActivity(remote.activity, seatSocket(remote.employee.seatId) !== null);
+        const socket = seatSocket(remote.employee.seatId);
+        view.setSeat?.(socket?.kind ?? null);
+        view.setActivity(remote.activity, socket !== null);
         view.setEmote?.(remote.emote);
       })
       .catch((error: unknown) =>
@@ -300,6 +304,7 @@ export class RemoteAvatars {
     }
     remote.activity = toActivity(remote.employee.activity);
     remote.emote = toEmote(remote.employee.emote ?? '');
+    remote.view?.setSeat?.(socket?.kind ?? null);
     remote.view?.setActivity(remote.activity, socket !== null);
     remote.view?.setEmote?.(remote.emote);
     remote.view?.setHeld?.(

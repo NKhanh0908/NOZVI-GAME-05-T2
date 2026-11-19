@@ -8,10 +8,13 @@ import {
   type Vec3,
 } from '@office/protocol';
 
+/** The furniture a seat belongs to; it sets where the seated avatar's hips go (T-1614). */
+export type SeatKind = 'desk' | 'sofa';
+
 /** A desk or sofa seat socket from the office layout. */
 export type SeatSocket = {
   id: string;
-  kind: 'desk' | 'sofa';
+  kind: SeatKind;
   position: Vec3;
   /** Degrees, as in the layout. */
   rotY: number;
