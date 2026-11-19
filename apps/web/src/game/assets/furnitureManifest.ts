@@ -17,6 +17,16 @@ export const FURNITURE: Record<string, string> = {
   main_door: 'doorwayFront.glb',
   utility_door: 'doorwayFront.glb',
 };
+
+/**
+ * T-1609: yaw (degrees) added to the layout rotY when a model is placed, for models whose
+ * front is not Kenney's usual +Z. `desk.glb` has its modesty panel on -Z and its open knee
+ * space on +Z, so the layout rotY (the seat's) would turn the panel toward the chair.
+ */
+export const MODEL_YAW: Readonly<Record<string, number>> = {
+  'desk.glb': 180,
+};
+
 // The air conditioner is procedural (`roomDetails.ts`, owner decision 2026-11-17).
 export const DESK_SCREEN = 'computerScreen.glb';
 export const COFFEE_MACHINE = 'kitchenCoffeeMachine.glb';

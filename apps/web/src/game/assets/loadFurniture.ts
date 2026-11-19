@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { LayoutBox, OfficeLayout } from '@office/protocol';
-import { FURNITURE } from './furnitureManifest';
+import { FURNITURE, MODEL_YAW } from './furnitureManifest';
 import { fitScale } from './fit';
 import { FurnitureLift, type LiftResult } from './furnitureLift';
 
@@ -45,11 +45,16 @@ export type FurniturePlacement = {
   replaces?: string;
 };
 
+/** Layout rotY plus the model's yaw correction (`MODEL_YAW`, T-1609), in [0, 360). */
+export function modelRotY(file: string, layoutRotY = 0): number {
+  return (((layoutRotY + (MODEL_YAW[file] ?? 0)) % 360) + 360) % 360;
+}
+
 /** Layout items that have a model in the manifest. Later desk props add their own placements. */
 export function furniturePlacements(layout: OfficeLayout): FurniturePlacement[] {
   return layout.items.flatMap((box) => {
     const file = FURNITURE[box.type];
-    return file ? [{ box, file, rotY: box.rotY ?? 0 }] : [];
+    return file ? [{ box, file, rotY: modelRotY(file, box.rotY) }] : [];
   });
 }
 
