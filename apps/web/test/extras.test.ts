@@ -24,19 +24,59 @@ function setup(state: PlayerState, seats = new SeatRegistry(), onAction = vi.fn(
 
 const target = (id: string) => officeLayout.interactables.find((i) => i.id === id)!;
 
-it.each(['coffee_machine', 'water_dispenser'])('%s sends a drink intent', (id) => {
-  const { p, c, sent } = setup({ x: 2.35, z: -2.75, heading: Math.PI });
-  expect(handleAction(target(id), p, c)).toEqual({});
+it('the water dispenser sends a drink intent', () => {
+  const { p, c, sent } = setup({ x: 5.46, z: -3.3, heading: Math.PI });
+  expect(handleAction(target('water_dispenser'), p, c)).toEqual({});
   expect(sent).toEqual([{ type: 'drink' }]);
   // The server starts and ends the break.
   expect(p.activity).toBe('idle');
 });
 
-it.each(['waving', 'drinking', 'resting'] as const)('does not send drink during %s', (activity) => {
+it('the coffee machine sends brew, not drink (T-1154)', () => {
   const { p, c, sent } = setup({ x: 2.35, z: -2.75, heading: Math.PI });
-  p.activity = activity;
+  expect(handleAction(target('coffee_machine'), p, c)).toEqual({});
+  expect(sent).toEqual([{ type: 'brew' }]);
+  expect(p.activity).toBe('idle');
+});
+
+it.each(['waving', 'drinking', 'resting', 'brewing'] as const)(
+  'does not send brew or drink during %s',
+  (activity) => {
+    const { p, c, sent } = setup({ x: 2.35, z: -2.75, heading: Math.PI });
+    p.activity = activity;
+    handleAction(target('coffee_machine'), p, c);
+    handleAction(target('water_dispenser'), p, c);
+    expect(sent).toEqual([]);
+  },
+);
+
+it('a coffee in hand sends neither brew nor a water drink (F sips it)', () => {
+  const { p, c, sent } = setup({ x: 2.35, z: -2.75, heading: Math.PI });
+  Object.assign(p, { item: 'coffee' });
   handleAction(target('coffee_machine'), p, c);
+  handleAction(target('water_dispenser'), p, c);
   expect(sent).toEqual([]);
+});
+
+it('a machine busy with another employee answers Machine in use and sends nothing', () => {
+  const p = { state: { x: 2.35, z: -2.75, heading: Math.PI }, activity: 'idle' as Activity };
+  const sent: IntentMessage[] = [];
+  let brewer: string | null = 'other';
+  const c = new InteractionController(p, new SeatRegistry(), 'me', {
+    onExit: vi.fn(),
+    sendIntent: (i) => sent.push(i),
+    brewer: () => brewer,
+  });
+  expect(c.currentPrompt()).toEqual({ text: 'Machine in use', available: false });
+  expect(handleAction(target('coffee_machine'), p, c)).toEqual({ message: 'Machine in use' });
+  expect(sent).toEqual([]);
+  // The local employee's own brew does not count as busy.
+  brewer = 'me';
+  expect(c.machineBusy()).toBe(false);
+  brewer = null;
+  expect(c.currentPrompt()).toEqual({ text: 'E — Make coffee', available: true });
+  handleAction(target('coffee_machine'), p, c);
+  expect(sent).toEqual([{ type: 'brew' }]);
 });
 
 it('sofa requests the first sofa seat no other employee holds', () => {
@@ -89,7 +129,8 @@ function frameLoop() {
     rig: { yaw: 0, update() {}, distanceToFocus: 4 },
     identity: { name: 'Test' },
     nameplate: { set() {} },
-    remotes: { update() {} },
+    remotes: { update() {}, someoneBrewing: () => false },
+    steam: { update() {} },
     renderer: { setAnimationLoop: (callback: () => void) => (frame = callback), render() {} },
     frame: { render() {} },
     clock: { update() {} },

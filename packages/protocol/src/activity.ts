@@ -10,7 +10,11 @@ export type ActivityEvent =
   | { type: 'stand' }
   | { type: 'drink' }
   | { type: 'wave' }
-  | { type: 'actionDone' }
+  /**
+   * A timed drink or wave ended. `resume` is the seated activity a seated sip started from
+   * (REQ-INT-003): the employee goes back to it instead of `idle`.
+   */
+  | { type: 'actionDone'; resume?: SeatedActivity }
   /** REQ-INT-003: start brewing at the coffee machine (only with an empty hand). */
   | { type: 'brew' }
   /** REQ-INT-003: the brew time is up; the employee now holds a coffee. */
@@ -23,10 +27,12 @@ export type Item = (typeof ITEMS)[number];
 export type Held = { item: Item; sips: number };
 export const EMPTY_HAND: Readonly<Held> = Object.freeze({ item: '', sips: 0 });
 
+/** The activities of an employee on a seat (desk or sofa). */
+export type SeatedActivity = 'sitting' | 'working' | 'resting';
 const SEATED: ReadonlySet<Activity> = new Set(['sitting', 'working', 'resting']);
 const FREE: ReadonlySet<Activity> = new Set(['idle', 'walking']);
 
-export const isSeated = (a: Activity): boolean => SEATED.has(a);
+export const isSeated = (a: Activity): a is SeatedActivity => SEATED.has(a);
 
 /**
  * REQ-AVATAR-004: the fixed emote list (owner, DECISIONS 2026-11-17). An `emote` intent
@@ -83,8 +89,13 @@ export const toItem = (v: string): Item =>
 /**
  * Activity after event `e`. `item` is what the employee holds before the event: brewing
  * needs an empty hand. A `drink` with a coffee is one sip and uses the same `drinking`
- * activity and timer as a drink at the machine or dispenser; `nextHeld` counts the sip.
+ * activity and timer as a drink at the water dispenser; `nextHeld` counts the sip.
  * Moving cancels `drinking`, `waving` and `brewing` (activity becomes walking).
+ *
+ * Seated sip (owner decision 2026-11-17): a `drink` while sitting, working or resting is
+ * allowed with a coffee only; the employee keeps the seat, lifts the cup and goes back to
+ * the seated activity it started from (`actionDone` with `resume`). Callers keep the seat
+ * while a seated sip runs; standing up cancels it.
  */
 export function nextActivity(a: Activity, e: ActivityEvent, item: Item = ''): Activity {
   switch (e.type) {
@@ -99,11 +110,12 @@ export function nextActivity(a: Activity, e: ActivityEvent, item: Item = ''): Ac
     case 'stand':
       return isSeated(a) ? 'idle' : a;
     case 'drink':
-      return FREE.has(a) ? 'drinking' : a;
+      return FREE.has(a) || (isSeated(a) && item === 'coffee') ? 'drinking' : a;
     case 'wave':
       return FREE.has(a) ? 'waving' : a;
     case 'actionDone':
-      return a === 'drinking' || a === 'waving' ? 'idle' : a;
+      if (a === 'drinking') return e.resume ?? 'idle';
+      return a === 'waving' ? 'idle' : a;
     case 'brew':
       return FREE.has(a) && item === '' ? 'brewing' : a;
     case 'brewDone':

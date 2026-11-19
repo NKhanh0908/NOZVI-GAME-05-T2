@@ -1,6 +1,6 @@
 # Code map
 
-Updated: 2026-11-17 · Keep under ~80 lines. One row per module, not per file.
+Updated: 2026-11-19 · Keep under ~80 lines. One row per module, not per file.
 
 > Add rows only for paths that actually exist. Architecture: `docs/ARCHITECTURE.md` §2. Commands: `pnpm check` (format, lint, typecheck, test, build), `pnpm --filter @office/web dev`, `pnpm --filter @office/web e2e`, `node docs/layout/validate-layout.mjs`. Node 24 required (Node 22 accepted for the cloud session, 2026-11-17).
 
@@ -31,6 +31,8 @@ Interaction (Phase 2, server-owned seats since T-1039): `apps/web/src/game/inter
 Phase 3 presence (REQ-UI-003): `apps/web/src/ui/employeeRoster.ts` (plain TS store over `employeeSource`, stable snapshot until join, leave, name, label or connection changes; "Reconnecting…" label while `connected = false`; `rebind` after a resumed session) feeds the `ui/EmployeeList.tsx` panel (rendered by `App.tsx` from `game.roster`) and the entrance board. Tests: `apps/web/test/employeeRoster.test.ts` (render counter), `apps/web/e2e/employees.spec.ts`.
 
 Phase 3 reconnect (REQ-NET-005/006): `App.tsx` renders `ui/ConnectionBanner.tsx` (countdown, "Connection lost" + Rejoin) from `Connection` status, detaches the game on a drop and calls `Game.attachRoom` for a resumed session (prediction `resync`, `RemoteAvatars.rebind`, roster `rebind`); a fresh Rejoin builds a new `Game`. Remote nameplates show the marker via `presenceLabel` (`game/hud/activityLabel.ts`). Tests: `apps/web/test/reconnect.test.ts`, `connectionBanner.test.ts`, `remoteAvatars.test.ts`, server `apps/server/test/officeRoom.test.ts`, e2e `reconnect.spec.ts`.
+
+Phase 4.1 coffee client (T-1154, REQ-INT-003): `extras.ts` sends `brew` at the coffee machine (refused locally with "Machine in use" when `roomBrewer` in `net/occupancy.ts` reports another brewer) and `drink` at the water dispenser; `InteractionController.sip` (F, standing or seated) and the brewing progress prompt (`Prompt.progress`, bar in `ui/Prompt.tsx`); held cup / glass in `avatar/HeldProp.ts` (hand bone or rest spot from `cupRestSpot` in `interaction/seats.ts`), owned by `AvatarView` (`setHeld`, `setActivity(a, seated)`, sip overlay `applySip`); steam `game/coffeeSteam.ts`; dev hooks `getHeld`, `isSteaming`, `getRemotes()[].item/sips/prop`. Tests: `apps/web/test/heldProp.test.ts`, `coffeeSteam.test.ts`, `extras.test.ts`, `interactionController.test.ts`, `remoteAvatars.test.ts`, e2e `coffee.spec.ts`.
 
 Phase 2 extras: `apps/web/src/game/interaction/extras.ts` sends drink and sofa-seat intents and returns local cabinet feedback; the server runs drink/wave timers (no client timers); `App.tsx` shows timed toasts and the wave hint. Remote avatars snap to the seat socket when `seatId` is set (`remote/RemoteAvatars.ts`). Tests: `apps/web/test/extras.test.ts`, `remoteAvatars.test.ts` (REQ-INT-003/004, REQ-AVATAR-004).
 

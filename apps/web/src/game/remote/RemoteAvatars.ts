@@ -3,9 +3,12 @@ import {
   BALANCE,
   isAvatarId,
   toEmote,
+  toItem,
   type Activity,
   type AvatarId,
   type EmoteId,
+  type Item,
+  type Vec3,
 } from '@office/protocol';
 import {
   InterpolationBuffer,
@@ -14,14 +17,19 @@ import {
   type ReplicatedEmployee,
 } from '../../net';
 import { AvatarView, CLIP_FOR } from '../avatar/AvatarView';
-import { seatPose, seatSocket } from '../interaction/seats';
+import { cupRestSpot, seatPose, seatSocket } from '../interaction/seats';
+import type { PropState } from '../avatar/HeldProp';
 import { Nameplate } from '../hud/Nameplate';
 import { presenceLabel } from '../hud/activityLabel';
 
 /** The parts of `AvatarView` a remote avatar uses. */
 export type RemoteView = {
   readonly root: THREE.Object3D;
-  setActivity(activity: Activity): void;
+  /** `seated`: on a seat, also during a seated sip (T-1154). */
+  setActivity(activity: Activity, seated?: boolean): void;
+  /** Optional so test fakes stay small; `AvatarView` implements it (T-1154). */
+  setHeld?(item: Item, restSpot: Vec3 | null): void;
+  readonly heldProp?: PropState | null;
   /** Optional so test fakes stay small; `AvatarView` implements it (T-1222). */
   setEmote?(emote: EmoteId | ''): void;
   update(dt: number): void;
@@ -60,6 +68,11 @@ export type RemoteInfo = {
   typing: number;
   /** Emote as drawn ('' = none; T-1222). */
   emote: EmoteId | '';
+  /** Replicated held item and sips (REQ-INT-003, T-1154). */
+  item: Item;
+  sips: number;
+  /** The cup or glass as drawn and where (hand, or desk / table), null when none. */
+  prop: PropState | null;
   /**
    * The interpolation time (ms, `performance.now` base minus the delay) the drawn pose was
    * sampled at, or null before the first sample or while seated. Lets e2e measure speed on
@@ -249,7 +262,7 @@ export class RemoteAvatars {
         remote.view = view;
         view.root.traverse((o) => (o.castShadow = false));
         group.add(view.root);
-        view.setActivity(remote.activity);
+        view.setActivity(remote.activity, seatSocket(remote.employee.seatId) !== null);
         view.setEmote?.(remote.emote);
       })
       .catch((error: unknown) =>
@@ -283,8 +296,12 @@ export class RemoteAvatars {
     }
     remote.activity = toActivity(remote.employee.activity);
     remote.emote = toEmote(remote.employee.emote ?? '');
-    remote.view?.setActivity(remote.activity);
+    remote.view?.setActivity(remote.activity, socket !== null);
     remote.view?.setEmote?.(remote.emote);
+    remote.view?.setHeld?.(
+      toItem(remote.employee.item ?? ''),
+      socket ? cupRestSpot(remote.employee.seatId) : null,
+    );
     remote.view?.update(dt);
     const reconnecting = remote.employee.connected === false;
     remote.status = presenceLabel(remote.activity, remote.employee.connected);
@@ -311,8 +328,17 @@ export class RemoteAvatars {
       status: r.status,
       typing: r.view?.typing ?? 0,
       emote: r.emote,
+      item: toItem(r.employee.item ?? ''),
+      sips: toItem(r.employee.item ?? '') === '' ? 0 : (r.employee.sips ?? 0),
+      prop: r.view?.heldProp ?? null,
       sampledAt: r.sampledAt,
     }));
+  }
+
+  /** True while any remote employee is brewing at the coffee machine (steam, T-1154). */
+  someoneBrewing(): boolean {
+    for (const remote of this.remotes.values()) if (remote.activity === 'brewing') return true;
+    return false;
   }
 
   dispose(): void {

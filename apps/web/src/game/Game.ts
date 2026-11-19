@@ -30,7 +30,14 @@ import { activityLabel } from './hud/activityLabel';
 import { RemoteAvatars } from './remote/RemoteAvatars';
 import { EntranceBoard } from './hud/EntranceBoard';
 import { EmployeeRoster } from '../ui/employeeRoster';
-import { bindPrediction, employeeSource, roomOccupancy, type OfficeRoomHandle } from '../net';
+import {
+  bindPrediction,
+  employeeSource,
+  roomBrewer,
+  roomOccupancy,
+  type OfficeRoomHandle,
+} from '../net';
+import { CoffeeSteam } from './coffeeSteam';
 import { TvScreen } from '../tv/TvScreen';
 import { TvCssLayer } from '../tv/TvCssLayer';
 import { FakeTvPlayer, type TvPlayer } from '../tv/player';
@@ -90,6 +97,7 @@ export class Game {
     }
     if (e.code === 'KeyE' && !e.repeat) this.controller.press();
     if (e.code === 'KeyG' && !e.repeat) this.controller.wave();
+    if (e.code === 'KeyF' && !e.repeat) this.controller.sip();
   };
   private readonly timer = new THREE.Timer();
   private readonly resizeObserver: ResizeObserver;
@@ -110,6 +118,10 @@ export class Game {
   /** Employee list for the 2D panel and the entrance board (REQ-UI-003). */
   readonly roster: EmployeeRoster;
   private readonly board = new EntranceBoard(officeLayout);
+  /** REQ-INT-003 (T-1154): steam on the coffee machine while anyone brews. */
+  private readonly steam = new CoffeeSteam(
+    officeLayout.interactables.find((i) => i.type === 'coffee_machine')?.position ?? [0, -10, 0],
+  );
   private readonly unbindBoard: () => void;
 
   constructor(
@@ -121,13 +133,14 @@ export class Game {
     this.room = netRoom;
     // Occupancy always reads the current room, also after a resumed session.
     const current = () => this.room;
+    const currentState = {
+      get state() {
+        return current().state;
+      },
+    };
     this.controller = new InteractionController(
       this.player,
-      roomOccupancy({
-        get state() {
-          return current().state;
-        },
-      }),
+      roomOccupancy(currentState),
       netRoom.sessionId,
       {
         onExit: () => this.onExit?.(),
@@ -137,6 +150,7 @@ export class Game {
           if (result.message) this.onToast?.(result.message);
         },
         onTv: () => this.tvMode.enter(),
+        brewer: roomBrewer(currentState),
       },
     );
     this.unbindPrediction = this.bindRoom(netRoom);
@@ -147,6 +161,7 @@ export class Game {
     this.roster = new EmployeeRoster(employeeSource(netRoom), netRoom.sessionId);
     this.scene.add(this.board.mesh);
     this.scene.add(this.tvScreen.group);
+    this.scene.add(this.steam.points);
     this.board.set(this.roster.count);
     this.unbindBoard = this.roster.subscribe(() => this.board.set(this.roster.count));
     const occluders: THREE.Object3D[] = [];
@@ -247,6 +262,13 @@ export class Game {
         avatarOk: () => this.player.viewFinite(),
         getTyping: () => this.player.typing,
         getEmote: () => this.player.emote,
+        /** T-1154: the local held item, sips and the cup / glass as drawn. */
+        getHeld: () => ({
+          item: this.player.item,
+          sips: this.player.sips,
+          prop: this.player.heldProp,
+        }),
+        isSteaming: () => this.steam.visible,
         getRemotes: () => this.remotes.list(),
         getRemoteCount: () => this.remotes.count,
         getBoardText: () => this.board.text,
@@ -388,6 +410,7 @@ export class Game {
       this.player.setOpacity(fadeOpacity(this.rig.distanceToFocus));
       this.onFrame?.(dt);
       this.remotes.update(dt);
+      this.steam.update(dt, this.player.activity === 'brewing' || this.remotes.someoneBrewing());
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
       this.clock.update(new Date());
       this.frame.render();
@@ -415,6 +438,7 @@ export class Game {
     this.disposeLighting();
     this.frame.dispose();
     this.clock.dispose();
+    this.steam.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();

@@ -3,15 +3,18 @@ import {
   BALANCE,
   officeLayout,
   toEmote,
+  toItem,
   type Activity,
   type EmoteId,
+  type Item,
   type MoveInput,
   type PlayerState,
 } from '@office/protocol';
 import { AvatarView } from './avatar/AvatarView';
 import { Predictor } from '../net/prediction';
 import type { LocalSnapshot } from '../net/localSync';
-import { seatPose, seatSocket, toActivity } from './interaction/seats';
+import { cupRestSpot, seatPose, seatSocket, toActivity } from './interaction/seats';
+import type { PropState } from './avatar/HeldProp';
 
 /**
  * The local activity to show: seat and break activities only as the server reports them;
@@ -19,7 +22,7 @@ import { seatPose, seatSocket, toActivity } from './interaction/seats';
  */
 export function localActivity(server: Activity, moving: boolean): Activity {
   if (moving) return 'walking';
-  return server === 'drinking' || server === 'waving' ? server : 'idle';
+  return server === 'drinking' || server === 'waving' || server === 'brewing' ? server : 'idle';
 }
 
 export class Player {
@@ -37,6 +40,11 @@ export class Player {
   emote: EmoteId | '' = '';
   /** The seat the server last reported for the local employee ('' = none). */
   private seatId = '';
+  /** REQ-INT-003: what the server says the local employee holds (T-1154). */
+  item: Item = '';
+  sips = 0;
+  /** Seconds the local activity has been `brewing` (0 otherwise); drives the progress prompt. */
+  private brewElapsed = 0;
   private view: AvatarView | null = null;
   private readonly materials: THREE.Material[] = [];
   private opacity = 1;
@@ -74,6 +82,9 @@ export class Player {
       ? this.serverActivity
       : localActivity(this.serverActivity, moving);
     if (activity !== this.activity) this.setActivity(activity);
+    this.brewElapsed = this.activity === 'brewing' ? this.brewElapsed + dt : 0;
+    this.view?.setActivity(this.activity, this.predictor.seated);
+    this.view?.setHeld(this.item, this.predictor.seated ? cupRestSpot(this.seatId) : null);
     // Movement ends an emote on the server; like breaks, stop showing it at once.
     this.emote = moving && !this.predictor.seated ? '' : this.serverEmote;
     this.view?.setEmote(this.emote);
@@ -103,6 +114,23 @@ export class Player {
     this.seatId = socket ? self.seatId : '';
     this.serverActivity = toActivity(self.activity);
     this.serverEmote = toEmote(self.emote ?? '');
+    this.item = toItem(self.item ?? '');
+    this.sips = this.item === '' ? 0 : (self.sips ?? 0);
+  }
+
+  /** True while the local employee is on a seat (also during a seated sip). */
+  get seated(): boolean {
+    return this.predictor.seated;
+  }
+
+  /** Brewing progress, 0 to 1, from the local clock since brewing started. */
+  get brewProgress(): number {
+    return Math.min(1, this.brewElapsed / BALANCE.coffee.brewSeconds);
+  }
+
+  /** The cup or glass drawn on the local avatar (null when none or still loading). */
+  get heldProp(): PropState | null {
+    return this.view?.heldProp ?? null;
   }
 
   setView(view: AvatarView): void {
@@ -119,13 +147,13 @@ export class Player {
       m.transparent = true;
       m.opacity = this.opacity;
     }
-    view.setActivity(this.activity);
+    view.setActivity(this.activity, this.predictor.seated);
     view.setEmote(this.emote);
   }
 
   setActivity(a: Activity): void {
     this.activity = a;
-    this.view?.setActivity(a);
+    this.view?.setActivity(a, this.predictor.seated);
   }
 
   viewFinite(): boolean {
