@@ -10,7 +10,9 @@ import {
   normalizeOfficeCode,
   parseJoinOptions,
   parseTvCommand,
+  parseTvTimeRequest,
   type TvRateLimitedNotice,
+  type TvTimeReply,
   type JoinErrorCode,
   type JoinOptions,
 } from '@office/protocol';
@@ -64,6 +66,12 @@ export class OfficeRoom extends Room<{ state: OfficeState }> {
     BALANCE.tv.rateLimitWindowSeconds * 1000,
     () => roomServices.now(),
   );
+  /** OQ-023 (T-1567): separate budget, so clock samples never use up TV commands. */
+  private readonly timeLimiter = new CommandRateLimiter(
+    BALANCE.tv.timeRequestsPerWindow,
+    BALANCE.tv.rateLimitWindowSeconds * 1000,
+    () => roomServices.now(),
+  );
 
   override onCreate(options: { officeCode?: unknown }): void {
     const code =
@@ -94,6 +102,15 @@ export class OfficeRoom extends Room<{ state: OfficeState }> {
         return;
       }
       this.tv.apply(client.sessionId, cmd);
+    });
+    // OQ-023 (T-1567): a client's clock sample on join. The reply carries the server epoch
+    // ms at the moment it is sent. Invalid or over-budget requests are dropped silently
+    // (no notice: a `tv_rate_limited` would hold the client's TV commands).
+    this.onMessage(MSG.tvTime, (client, raw: unknown) => {
+      const req = parseTvTimeRequest(raw);
+      if (req === null || this.timeLimiter.tryUse(client.sessionId) > 0) return;
+      const reply: TvTimeReply = { id: req.id, serverNow: roomServices.now() };
+      client.send(SERVER_MSG.tvTime, reply);
     });
     startMovementLoop(
       (tick, delayMs) => this.setTimestep(tick, delayMs),
@@ -147,6 +164,7 @@ export class OfficeRoom extends Room<{ state: OfficeState }> {
     this.sim.remove(client.sessionId);
     this.tv.leave(client.sessionId);
     this.tvLimiter.forget(client.sessionId);
+    this.timeLimiter.forget(client.sessionId);
     this.state.employees.delete(client.sessionId);
   }
 }
