@@ -4,12 +4,20 @@ import { officeLayout } from '../layout/layout';
 import { PROTOCOL_VERSION } from '../version';
 
 /** Client to server message names. */
-export const MSG = { input: 'input', intent: 'intent', tv: 'tv' } as const;
+export const MSG = { input: 'input', intent: 'intent', tv: 'tv', tvTime: 'tv_time' } as const;
 
 /** Server to client message names. */
-export const SERVER_MSG = { tvRateLimited: 'tv_rate_limited' } as const;
+export const SERVER_MSG = { tvRateLimited: 'tv_rate_limited', tvTime: 'tv_time' } as const;
 /** REQ-NFR-005: payload of `tv_rate_limited`; the command was dropped without effect. */
 export type TvRateLimitedNotice = { retryAfterMs: number };
+
+/**
+ * OQ-023 (T-1567): client to server `tv_time`, a request for one server clock sample.
+ * `id` is echoed so the client matches the reply to its outstanding request.
+ */
+export type TvTimeRequest = { id: number };
+/** OQ-023 (T-1567): server to client `tv_time`, the server epoch ms when it answered. */
+export type TvTimeReply = { id: number; serverNow: number };
 
 /** Largest sequence number (stored as uint32 in `EmployeeState.lastSeq`). */
 export const MAX_SEQ = 0xffff_ffff;
@@ -166,4 +174,21 @@ export function parseTvCommand(raw: unknown): TvCommand | null {
   }
   if (videoId !== undefined || time !== undefined) return null;
   return { type: type as Exclude<TvCommandType, 'load' | 'seek'> };
+}
+
+const isId = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_SEQ;
+
+/** REQ-NFR-004, OQ-023: returns a clean copy of a valid `tv_time` request, or null. */
+export function parseTvTimeRequest(raw: unknown): TvTimeRequest | null {
+  if (!isRecord(raw)) return null;
+  return isId(raw.id) ? { id: raw.id } : null;
+}
+
+/** OQ-023: returns a clean copy of a valid `tv_time` reply (client side), or null. */
+export function parseTvTimeReply(raw: unknown): TvTimeReply | null {
+  if (!isRecord(raw)) return null;
+  const { id, serverNow } = raw;
+  if (!isId(id) || typeof serverNow !== 'number' || !Number.isFinite(serverNow)) return null;
+  return serverNow > 0 ? { id, serverNow } : null;
 }
