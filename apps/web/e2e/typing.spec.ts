@@ -94,9 +94,10 @@ test('a working employee types on their own page and on another page', async ({
   console.info(
     `[typing] draw calls on Ben: before ${JSON.stringify(before)} after ${JSON.stringify(after)}`,
   );
-  // The overlay only moves bones: nothing new is drawn.
-  expect(after.total).toBe(before.total);
-  expect(after.triangles).toBe(before.triangles);
+  // The overlay only moves bones. The one new draw is the T-1155 desk lamp glow on Ana's
+  // desk (ws_7 has the square lamp: a 12-triangle box shell); the screen swaps meshes.
+  expect(after.total).toBe(before.total + 1);
+  expect(after.triangles).toBe(before.triangles + 12);
 
   // Stop working: the overlay fades out on both pages.
   await ana.keyboard.press('e');

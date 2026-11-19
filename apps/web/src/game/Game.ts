@@ -38,6 +38,7 @@ import {
   type OfficeRoomHandle,
 } from '../net';
 import { CoffeeSteam } from './coffeeSteam';
+import { DeskScreens } from './desk/DeskScreens';
 import { TvScreen } from '../tv/TvScreen';
 import { TvCssLayer } from '../tv/TvCssLayer';
 import { FakeTvPlayer, type TvPlayer } from '../tv/player';
@@ -123,6 +124,8 @@ export class Game {
     officeLayout.interactables.find((i) => i.type === 'coffee_machine')?.position ?? [0, -10, 0],
   );
   private readonly unbindBoard: () => void;
+  /** REQ-INT-002 (T-1155): monitors and desk lamps follow each desk's replicated activity. */
+  private deskScreens: DeskScreens | undefined;
 
   constructor(
     private readonly host: HTMLElement,
@@ -170,9 +173,10 @@ export class Game {
     });
     // T-1152: desk props (screen, keyboard, mouse, lamp, stationery, decor) load with the
     // furniture, so repeats share one InstancedMesh per model part.
+    const desks = deskProps(officeLayout);
     const placements = [
       ...furniturePlacements(officeLayout),
-      ...deskProps(officeLayout).map((p) => p.placement),
+      ...desks.map((p) => p.placement),
       // T-1158: pantry cabinets and coffee machine, cups, rugs, pillows, plants, books.
       ...decorPlacements(officeDecor),
     ];
@@ -182,6 +186,11 @@ export class Game {
       this.furniture = result;
       // T-1149: material table (roughness, metalness, palette colour) on the Kenney materials.
       applyMaterialTable(office);
+      // T-1155: screen and lamp overlays on the desks whose props loaded.
+      this.deskScreens = new DeskScreens(
+        desks.filter((p) => !result.failed.includes(p.placement.box.id)),
+      );
+      office.add(this.deskScreens.group);
       occluders.length = 0;
       office.updateMatrixWorld(true);
       office.traverse((o) => {
@@ -250,6 +259,8 @@ export class Game {
               loaded:
                 this.furniture !== undefined && !this.furniture.failed.includes(p.placement.box.id),
             })),
+        /** T-1155: the screen state, lamp and shared texture of one desk. */
+        getDeskScreen: (deskId: string) => this.deskScreens?.info(deskId) ?? null,
         getActivity: () => this.player.activity,
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
@@ -413,6 +424,7 @@ export class Game {
       this.steam.update(dt, this.player.activity === 'brewing' || this.remotes.someoneBrewing());
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
       this.clock.update(new Date());
+      this.deskScreens?.follow(this.room, Date.now());
       this.frame.render();
       this.labelRenderer.render(this.scene, this.camera);
       this.tvLayer.render(this.camera);
@@ -439,6 +451,7 @@ export class Game {
     this.frame.dispose();
     this.clock.dispose();
     this.steam.dispose();
+    this.deskScreens?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
