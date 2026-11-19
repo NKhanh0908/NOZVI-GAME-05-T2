@@ -37,13 +37,43 @@ export const BALANCE = {
    * `activity.crossFadeSeconds`.
    */
   avatar: {
-    /** REQ-AVATAR-002 typing while `working` (T-1219): alternating taps, Hz per hand. */
-    typing: { tapHz: 3.5, tapDepth: 0.35, reach: 0.6, elbowOut: 0.18, handsIn: 0.32 },
+    /**
+     * REQ-AVATAR-002 typing while `working` (T-1219): alternating taps, Hz per hand. The
+     * wrists reach `wrist` (T-1614, m in the seat frame: forward of and above the seat
+     * socket, `side` either way), just behind the layout keyboard (0.42 m forward, top
+     * 0.79 m) so the fingers rest on the keys.
+     */
+    typing: {
+      tapHz: 3.5,
+      tapDepth: 0.35,
+      wrist: { forward: 0.31, height: 0.82, side: 0.11 },
+      elbowOut: 0.6,
+      handsIn: 0.32,
+    },
     /**
      * REQ-INT-003 make-coffee motion while `brewing` (T-1611): both hands at the machine,
      * the right hand presses `pressHz` times a second, dipping by `pressDepth`.
      */
     brew: { pressHz: 0.8, pressDepth: 0.55, reach: 1.2, elbowOut: 0.2, handsIn: 0.3 },
+    /**
+     * Seated placement (T-1614), in metres in the seat frame (forward = the way the seat
+     * faces, from the layout seat socket; height above the floor). The avatar model is moved
+     * so the midpoint of its hip joints (thigh bones) lands on `desk` / `sofa`: about 0.11 m
+     * above the cushion top (buttock depth) and about 0.09 m in front of the backrest. The
+     * Kenney desk chair, fitted to its layout box, has its cushion top at 0.365 m, front edge
+     * at +0.24 m and backrest face at -0.16 m; the sofa cushion top is at 0.45 m and its
+     * backrest face at -0.31 m. The move blends in over `blendSeconds`. While seated the
+     * feet are planted at the rig's rest foot height, and when not working the hands rest
+     * on the thighs: the wrist `thighAlong` of the way from hip to knee, `thighLift` above
+     * the thigh bone.
+     */
+    sit: {
+      desk: { forward: -0.07, height: 0.48 },
+      sofa: { forward: -0.21, height: 0.57 },
+      blendSeconds: 0.6,
+      thighAlong: 0.4,
+      thighLift: 0.08,
+    },
     /** REQ-AVATAR-004 emote overlays (T-1222); angles in radians, rates in Hz. */
     emote: {
       think: { headNod: 0.3 },

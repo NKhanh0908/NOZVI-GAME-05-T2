@@ -300,7 +300,10 @@ it.each(['men_suit', 'women_suit'] as const)(
     expect(armDifference(seated, working)).toBeGreaterThan(1e-3);
     step(frames - half);
     expect(working.typing).toBe(0);
-    expect(armDifference(seated, working)).toBeLessThan(1e-4);
+    // Both views now rest the hands on the thighs (T-1614). The mixer skips writing a bone
+    // whose clip value did not change, so the reach keeps a trace of the typing pose's twist
+    // (well under 0.1 degree).
+    expect(armDifference(seated, working)).toBeLessThan(2e-3);
     seated.dispose();
     working.dispose();
   },

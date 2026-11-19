@@ -9,9 +9,12 @@ import { BALANCE } from '@office/protocol';
  * `UpperArmR`), shared by both presets.
  */
 export type Arm = { upper: THREE.Bone; lower: THREE.Bone; hand: THREE.Bone; finger: THREE.Bone };
+export type Leg = { upper: THREE.Bone; lower: THREE.Bone; foot: THREE.Bone };
 export type Rig = {
   left: Arm | null;
   right: Arm | null;
+  /** Legs by side (T-1614): seated feet planting and hands on the thighs. */
+  legs: { left: Leg | null; right: Leg | null };
   chest: THREE.Bone | null;
   neck: THREE.Bone | null;
   head: THREE.Bone | null;
@@ -26,11 +29,20 @@ function arm(bones: THREE.Bone[], side: 'L' | 'R'): Arm | null {
   return upper && lower && hand && finger ? { upper, lower, hand, finger } : null;
 }
 
+function leg(bones: THREE.Bone[], side: 'L' | 'R'): Leg | null {
+  const find = (name: string) => bones.find((b) => b.name === name);
+  const upper = find(`UpperLeg${side}`);
+  const lower = find(`LowerLeg${side}`);
+  const foot = find(`Foot${side}`);
+  return upper && lower && foot ? { upper, lower, foot } : null;
+}
+
 export function findRig(bones: THREE.Bone[]): Rig {
   const find = (name: string) => bones.find((b) => b.name === name) ?? null;
   return {
     left: arm(bones, 'L'),
     right: arm(bones, 'R'),
+    legs: { left: leg(bones, 'L'), right: leg(bones, 'R') },
     chest: find('Chest'),
     neck: find('Neck'),
     head: find('Head'),
@@ -95,14 +107,17 @@ export function dir(f: Frame, forward: number, up: number, right: number): THREE
 }
 
 /**
- * REQ-AVATAR-002 typing while `working` (T-1219): both upper arms reach forward to the desk,
- * forearms point at the keyboard and the hands tap in alternation
- * (`BALANCE.avatar.typing`). `time` is the view's own clock in seconds.
+ * REQ-AVATAR-002 typing while `working` (T-1219): the wrists go to the keyboard and the
+ * hands tap in alternation (`BALANCE.avatar.typing`). Since T-1614 the wrists reach a fixed
+ * spot in the seat frame (`wrist`: forward of and above the seat socket, the root), so the
+ * hands stay on the keyboard whatever the rig's seated shoulder height; elbows down and out.
+ * `time` is the view's own clock in seconds.
  */
 export function applyTyping(root: THREE.Object3D, rig: Rig, time: number, weight: number): void {
   if (weight <= 0) return;
   const f = frameOf(root, rig);
-  const { tapHz, tapDepth, reach, elbowOut, handsIn } = BALANCE.avatar.typing;
+  const { tapHz, tapDepth, wrist, elbowOut, handsIn } = BALANCE.avatar.typing;
+  const base = root.getWorldPosition(new THREE.Vector3());
   const sides = [
     [rig.right, 1, 0],
     [rig.left, -1, Math.PI],
@@ -110,8 +125,12 @@ export function applyTyping(root: THREE.Object3D, rig: Rig, time: number, weight
   for (const [a, side, phase] of sides) {
     if (!a) continue;
     const tap = Math.max(0, Math.sin(time * tapHz * 2 * Math.PI + phase)) * tapDepth;
-    aimBone(a.upper, a.lower, dir(f, reach, -1, side * elbowOut), weight);
-    aimBone(a.lower, a.hand, dir(f, 1, -0.12 - tap * 0.5, -side * handsIn), weight);
+    const target = base
+      .clone()
+      .addScaledVector(f.forward, wrist.forward)
+      .addScaledVector(f.up, wrist.height + tap * 0.04)
+      .addScaledVector(f.right, side * wrist.side);
+    reachTwoBone(a.upper, a.lower, a.hand, target, dir(f, -0.2, -1, side * elbowOut), weight);
     aimBone(a.hand, a.finger, dir(f, 1, -0.35 - tap, -side * handsIn * 0.5), weight);
   }
 }
@@ -152,6 +171,97 @@ export function applySip(root: THREE.Object3D, rig: Rig, weight: number): void {
   aimBone(a.upper, a.lower, dir(f, 0.55, -0.6, 0.3), weight);
   aimBone(a.lower, a.hand, dir(f, 0.2, 1, -0.55), weight);
   aimBone(a.hand, a.finger, dir(f, 0.6, 0.6, -0.2), weight);
+}
+
+const MAX_EXTENSION = 0.97;
+
+/**
+ * Two-bone reach: turns `upper` and `lower` so `end` gets to the world `target` (clamped to
+ * the chain's length), the middle joint bending toward the world direction `pole`. Blended
+ * from the current pose by `weight` like `aimBone`.
+ */
+export function reachTwoBone(
+  upper: THREE.Object3D,
+  lower: THREE.Object3D,
+  end: THREE.Object3D,
+  target: THREE.Vector3,
+  pole: THREE.Vector3,
+  weight: number,
+): void {
+  if (weight <= 0) return;
+  const a = upper.getWorldPosition(new THREE.Vector3());
+  const l1 = lower.getWorldPosition(new THREE.Vector3()).distanceTo(a);
+  const l2 = end.getWorldPosition(new THREE.Vector3()).distanceTo(lower.getWorldPosition(tmpA));
+  const axis = target.clone().sub(a);
+  // A fully straight chain is singular (the bend flips with tiny target moves), so the
+  // reach stops at `MAX_EXTENSION` of the chain's length.
+  const d = THREE.MathUtils.clamp(
+    axis.length(),
+    Math.abs(l1 - l2) + 1e-4,
+    (l1 + l2) * MAX_EXTENSION,
+  );
+  axis.normalize();
+  const bend = pole.clone().addScaledVector(axis, -pole.dot(axis));
+  if (bend.lengthSq() < 1e-8) return;
+  bend.normalize();
+  const along = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+  const joint = a
+    .clone()
+    .addScaledVector(axis, along)
+    .addScaledVector(bend, Math.sqrt(Math.max(0, l1 * l1 - along * along)));
+  aimBone(upper, lower, joint.sub(a).normalize(), weight);
+  const reached = a.addScaledVector(axis, d);
+  aimBone(lower, end, reached.sub(lower.getWorldPosition(tmpB)).normalize(), weight);
+}
+
+/**
+ * T-1614: plants a seated avatar's feet. Each foot keeps where the clip puts it across the
+ * floor but is moved to `footY` (the rig's rest foot height, world y) and keeps its world
+ * orientation; the knee bends forward as needed. Run after the seat offset moved the model.
+ */
+export function applySeatedLegs(
+  root: THREE.Object3D,
+  rig: Rig,
+  footY: number,
+  weight: number,
+): void {
+  if (weight <= 0) return;
+  const f = frameOf(root, rig);
+  for (const l of [rig.legs.left, rig.legs.right]) {
+    if (!l) continue;
+    const keep = l.foot.getWorldQuaternion(new THREE.Quaternion());
+    const target = l.foot.getWorldPosition(new THREE.Vector3());
+    target.y = footY;
+    reachTwoBone(l.upper, l.lower, l.foot, target, dir(f, 1, 0.5, 0), weight);
+    l.foot.parent!.getWorldQuaternion(tmpParent).invert();
+    const local = tmpParent.multiply(keep);
+    l.foot.quaternion.slerp(local, weight);
+    l.foot.updateWorldMatrix(false, true);
+  }
+}
+
+/**
+ * T-1614: seated and not working, the hands rest on the thighs: each wrist goes
+ * `BALANCE.avatar.sit.thighAlong` of the way from hip to knee on its own side,
+ * `thighLift` above the thigh bone, elbows back and out; fingers follow the thigh.
+ */
+export function applyRestHands(root: THREE.Object3D, rig: Rig, weight: number): void {
+  if (weight <= 0) return;
+  const f = frameOf(root, rig);
+  const { thighAlong, thighLift } = BALANCE.avatar.sit;
+  const sides = [
+    [rig.right, rig.legs.right, 1],
+    [rig.left, rig.legs.left, -1],
+  ] as const;
+  for (const [a, l, side] of sides) {
+    if (!a || !l) continue;
+    const hip = l.upper.getWorldPosition(new THREE.Vector3());
+    const knee = l.lower.getWorldPosition(new THREE.Vector3());
+    const target = hip.clone().lerp(knee, thighAlong).addScaledVector(f.up, thighLift);
+    reachTwoBone(a.upper, a.lower, a.hand, target, dir(f, -1, -0.3, side * 0.8), weight);
+    const thigh = knee.sub(hip).normalize().addScaledVector(f.up, -0.3);
+    aimBone(a.hand, a.finger, thigh.normalize(), weight);
+  }
 }
 
 /** Rotates `bone` by `angle` (rad) about the world `axis`, on top of its current pose. */
