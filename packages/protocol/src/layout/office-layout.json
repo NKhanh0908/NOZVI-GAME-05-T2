@@ -1519,6 +1519,16 @@
       "inventory": false
     },
     {
+      "id": "fridge",
+      "type": "fridge",
+      "zone": "Pantry",
+      "itemId": "fridge",
+      "position": [0.96, 0.85, -4.2],
+      "interactionPoint": [0.96, 0, -3.3],
+      "interactionRange": 2,
+      "decoration": "local_only"
+    },
+    {
       "id": "tv",
       "type": "TV",
       "zone": "Entertainment",

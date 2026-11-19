@@ -117,6 +117,7 @@ export function App() {
           provider={game.tvProvider}
           controls={game.tvControls}
           source={game.tvControls}
+          notice={game.tvNotice}
           onClose={() => game.tvMode.exit()}
         />
       )}

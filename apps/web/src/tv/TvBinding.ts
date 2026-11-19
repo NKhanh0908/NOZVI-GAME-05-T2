@@ -1,11 +1,14 @@
 import {
   BALANCE,
+  MAX_SEQ,
   MSG,
   SERVER_MSG,
+  parseTvTimeReply,
   readTv,
   type TvCommand,
   type TvRateLimitedNotice,
   type TvSnapshot,
+  type TvTimeRequest,
 } from '@office/protocol';
 import type { TvControls, TvView, TvViewSource } from './controls';
 import type { TvPlayer } from './player';
@@ -34,11 +37,14 @@ export type TvRoom = {
   readonly sessionId: string;
   readonly state: TvState;
   send(type: typeof MSG.tv, cmd: TvCommand): void;
+  send(type: typeof MSG.tvTime, request: TvTimeRequest): void;
   onStateChange: StateChange<TvState>;
   onMessage(
     type: typeof SERVER_MSG.tvRateLimited,
     callback: (notice: TvRateLimitedNotice) => void,
   ): () => void;
+  /** The reply is validated with `parseTvTimeReply` before use. */
+  onMessage(type: typeof SERVER_MSG.tvTime, callback: (reply: unknown) => void): () => void;
 };
 
 export type TvBindingOptions = {
@@ -73,8 +79,12 @@ const commandKey = (tv: TvSnapshot) => `${tv.updatedAt}|${tv.status}|${tv.videoI
  * aligns to the server position (a late joiner seeks to it); while playing, the drift sync
  * checks once a second and on `visibilitychange`. `unmute` and the panel's Close are local.
  *
- * Clock offset (OQ-023): every fresh `updatedAt` seen after the first snapshot is a sample
- * for {@link ClockOffsetEstimator}; until then the local clock is taken as server time.
+ * Clock offset (OQ-023): on every attach the binding asks the server for
+ * `BALANCE.tv.clockSamplesOnJoin` clock samples (`tv_time`, one after the other; T-1567),
+ * and every fresh `updatedAt` seen after the first snapshot is one more sample for
+ * {@link ClockOffsetEstimator}. Until the first sample the local clock is taken as server
+ * time; a join sample that moves a playing TV's expected position past the ignore band
+ * re-aligns the player with a seek, as a command would.
  *
  * Video end (OQ-022, T-1376): the controller's client reports it as a `pause` (the server
  * stamps the end position); other clients hold the last frame until that arrives. When no
@@ -103,6 +113,12 @@ export class TvBinding implements TvControls, TvViewSource {
   private endedAt: string | null = null;
   /** Commands are not sent before this local time (server rate-limit notice). */
   private blockedUntil = 0;
+  /** Last `tv_time` request id (wraps at MAX_SEQ). */
+  private timeSeq = 0;
+  /** The `tv_time` request awaiting its reply (one at a time), or null. */
+  private pendingTime: number | null = null;
+  /** `tv_time` samples still to take after the pending one. */
+  private timeSamplesLeft = 0;
   readonly clock = new ClockOffsetEstimator();
   private readonly drift = new DriftController(this.clock);
   private readonly now: () => number;
@@ -163,10 +179,15 @@ export class TvBinding implements TvControls, TvViewSource {
       this.blockedUntil = this.now() + Math.max(0, notice.retryAfterMs);
       this.onRateLimited(notice);
     });
+    const offTime = room.onMessage(SERVER_MSG.tvTime, (raw) => this.timeReply(raw));
     this.unbindRoom = () => {
       room.onStateChange.remove(onPatch);
       offNotice();
+      offTime();
     };
+    // T-1567: the join snapshot is no sample, so ask the server for fresh ones at once.
+    this.timeSamplesLeft = BALANCE.tv.clockSamplesOnJoin;
+    this.requestTime();
     onPatch(room.state);
   }
 
@@ -175,6 +196,8 @@ export class TvBinding implements TvControls, TvViewSource {
     this.unbindRoom();
     this.unbindRoom = () => undefined;
     this.room = null;
+    this.pendingTime = null;
+    this.timeSamplesLeft = 0;
   }
 
   dispose(): void {
@@ -251,6 +274,55 @@ export class TvBinding implements TvControls, TvViewSource {
       muted: this.player.isMuted(),
       error: this.error,
     };
+  }
+
+  // --- server clock samples (OQ-023, T-1567) ---
+
+  private requestTime(): void {
+    const room = this.room;
+    if (!room || this.timeSamplesLeft <= 0) return;
+    this.timeSamplesLeft -= 1;
+    this.timeSeq = this.timeSeq >= MAX_SEQ ? 0 : this.timeSeq + 1;
+    this.pendingTime = this.timeSeq;
+    try {
+      room.send(MSG.tvTime, { id: this.timeSeq });
+    } catch (error) {
+      // A closed socket: the next attach asks again.
+      this.pendingTime = null;
+      console.warn('TV clock sample not requested.', error);
+    }
+  }
+
+  /**
+   * A `tv_time` reply. The server stamped it before it arrived, so `serverNow` minus the
+   * local receive time is a lower bound of the offset, like a fresh `updatedAt`.
+   */
+  private timeReply(raw: unknown): void {
+    const reply = parseTvTimeReply(raw);
+    if (reply === null || reply.id !== this.pendingTime) return;
+    this.pendingTime = null;
+    this.clock.addSample(reply.serverNow, this.now());
+    this.realign();
+    this.requestTime();
+  }
+
+  /**
+   * The offset estimate changed: a playing TV whose position is now off by the ignore
+   * band or more is seeked like a late joiner (before the video starts the player only
+   * moves its start position, T-1405). A paused TV does not depend on the clock.
+   */
+  private realign(): void {
+    const tv = this.tv;
+    if (tv.status !== 'playing' || this.loaded === null || this.loaded !== tv.videoId) return;
+    if (this.endedAt === this.key) return;
+    const expected = this.expected();
+    if (expected === null) return;
+    if (Math.abs(this.player.getTime() - expected) >= BALANCE.tv.ignoreBelowSeconds) {
+      this.player.seek(expected);
+    }
+    if (this.player.isReady()) {
+      this.run(this.drift.resync(tv, { time: this.player.getTime() }, this.now()));
+    }
   }
 
   // --- room state to player ---

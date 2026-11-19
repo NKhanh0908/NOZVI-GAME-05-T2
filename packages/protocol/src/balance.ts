@@ -3,6 +3,19 @@ const WAVE_SECONDS = 1.6;
 
 export const BALANCE = {
   interaction: { facingConeDeg: 90 },
+  /**
+   * Client-only interaction feedback (REQ-INT-001/004/005, T-1156, plan phase-4.1 §3.5).
+   * The current target's materials get `highlight.color` as emissive at
+   * `highlight.intensity`. Cabinet, fridge and main-door leaves swing open by `openAngleDeg`
+   * over `openSeconds` (local only, never replicated); the door exit leaves the room
+   * `doorExitSeconds` after E so the swing is seen.
+   */
+  interactionView: {
+    highlight: { color: '#ffcf70', intensity: 0.35 },
+    openSeconds: 0.45,
+    openAngleDeg: { cabinet: 105, fridge: 100, door: 75 },
+    doorExitSeconds: 0.5,
+  },
   activity: { drinkSeconds: 2.5, waveSeconds: WAVE_SECONDS, crossFadeSeconds: 0.25 },
   /**
    * REQ-INT-003 coffee routine (plan phase-4.1 §3.4, §6.2). A sip lasts
@@ -50,6 +63,27 @@ export const BALANCE = {
     grip: { forward: 0.03, up: -0.02, right: 0 },
     rest: { inset: 0.14, side: 0.45, margin: 0.06 },
     steam: { puffs: 14, riseSpeed: 0.22, height: 0.35, size: 0.06, aboveMachine: 0.2 },
+  },
+  /**
+   * Client-only working desktop (REQ-INT-002, T-1155, plan phase-4.1 §3.3, §6.3). One shared
+   * canvas per screen state, `canvas` pixels; the desktop canvas is redrawn at most every
+   * `redrawSeconds` (clock, `lines` text lines in one window, one new line per redraw).
+   * Colours name `officeLayout.palette` entries. `offColor` is the empty desk's dark screen;
+   * `lockDim` darkens the wallpaper on the lock screen. `surfaceOffset` (m) lifts the screen
+   * quad off the monitor panel. The desk lamp shade glows with `lamp` while its desk shows
+   * the desktop; `shadeGrow` enlarges the glow shell over the shade.
+   */
+  deskScreen: {
+    canvas: [256, 192],
+    redrawSeconds: 1,
+    lines: 7,
+    wallpaper: ['chairBack', 'deskDividers'],
+    window: 'walls',
+    text: 'chairSeat',
+    offColor: '#0b0c0e',
+    lockDim: 0.55,
+    surfaceOffset: 0.003,
+    lamp: { color: '#fff1d6', emissive: '#ffd9a0', emissiveIntensity: 5, shadeGrow: 1.04 },
   },
   movement: { walkSpeed: 2.0, runSpeed: 4.0, capsuleRadius: 0.3, turnRate: 12 },
   camera: {
@@ -130,6 +164,20 @@ export const BALANCE = {
     /** REQ-NFR-005: at most rateLimitCommands TV commands per rateLimitWindowSeconds per client. */
     rateLimitCommands: 5,
     rateLimitWindowSeconds: 10,
+    /**
+     * OQ-023 (T-1567): `tv_time` clock samples a client takes on every join or reconnect,
+     * one after the other; the tightest (largest) lower bound wins.
+     */
+    clockSamplesOnJoin: 3,
+    /** OQ-023: at most this many `tv_time` requests per rateLimitWindowSeconds per client. */
+    timeRequestsPerWindow: 6,
+  },
+  /** T-1568: client YouTube player robustness (presentation only, not synced). */
+  tvPlayer: {
+    /** The IFrame API script counts as failed after this long without becoming ready. */
+    iframeApiTimeoutMs: 15_000,
+    /** At most this many commands wait for the IFrame player; the oldest is dropped. */
+    playerQueueMax: 32,
   },
   rendering: {
     /** 'agx' or 'aces' (THREE.AgXToneMapping / THREE.ACESFilmicToneMapping). */

@@ -1,3 +1,4 @@
+import { BALANCE } from '@office/protocol';
 import { Listeners, type TvPlayer } from './player';
 import { defaultTvLog, type TvLog } from './tvDebugLog';
 
@@ -13,6 +14,11 @@ export const YT_STATE = {
 } as const;
 /** A seek never targets the last this-many seconds of a known duration (T-1405). */
 export const SEEK_END_MARGIN_SECONDS = 0.5;
+/**
+ * T-1568: error code the adapter reports when the IFrame API script fails to load or times
+ * out. The API never uses it, so it maps to the `unknown` video error.
+ */
+export const IFRAME_API_LOAD_ERROR_CODE = -1;
 
 /** The parts of a `YT.Player` the adapter uses. */
 export type YtPlayer = {
@@ -50,9 +56,17 @@ export type YtWindow = {
   onYouTubeIframeAPIReady?: (() => void) | undefined;
 };
 
+/** The script element fields the loader sets (a real `HTMLScriptElement` fits). */
+export type YtScript = {
+  src: string;
+  async: boolean;
+  onerror?: ((...args: never[]) => unknown) | null;
+  remove?(): void;
+};
+
 /** The document calls the loader makes. */
 export type YtDocument = {
-  createElement(tag: 'script'): { src: string; async: boolean };
+  createElement(tag: 'script'): YtScript;
   head: { appendChild(node: unknown): unknown };
 };
 
@@ -61,20 +75,43 @@ const pending = new WeakMap<object, Promise<YtNamespace>>();
 /**
  * Loads the IFrame API script once per window and resolves with `YT` when it is ready.
  * An earlier `onYouTubeIframeAPIReady` handler is still called.
+ *
+ * T-1568: rejects when the script fails to load (blocked, offline) or YT is not ready
+ * within `timeoutMs`. The failed attempt is forgotten (script removed, ready handler
+ * restored), so the next call tries again.
  */
-export function loadYouTubeIframeApi(win: YtWindow, doc: YtDocument): Promise<YtNamespace> {
+export function loadYouTubeIframeApi(
+  win: YtWindow,
+  doc: YtDocument,
+  timeoutMs: number = BALANCE.tvPlayer.iframeApiTimeoutMs,
+): Promise<YtNamespace> {
   if (win.YT?.Player) return Promise.resolve(win.YT as YtNamespace);
   const existing = pending.get(win);
   if (existing) return existing;
-  const ready = new Promise<YtNamespace>((resolve) => {
+  const script = doc.createElement('script');
+  const ready = new Promise<YtNamespace>((resolve, reject) => {
     const previous = win.onYouTubeIframeAPIReady;
-    win.onYouTubeIframeAPIReady = () => {
+    const handler = () => {
+      clearTimeout(timer);
       previous?.();
       resolve(win.YT as YtNamespace);
     };
+    const fail = (reason: string) => {
+      clearTimeout(timer);
+      script.onerror = null;
+      if (pending.get(win) === ready) pending.delete(win);
+      if (win.onYouTubeIframeAPIReady === handler) win.onYouTubeIframeAPIReady = previous;
+      script.remove?.();
+      reject(new Error(reason));
+    };
+    const timer = setTimeout(() => {
+      if (win.YT?.Player) handler();
+      else fail(`YouTube IFrame API not ready after ${timeoutMs} ms`);
+    }, timeoutMs);
+    win.onYouTubeIframeAPIReady = handler;
+    script.onerror = () => fail('YouTube IFrame API script failed to load');
   });
   pending.set(win, ready);
-  const script = doc.createElement('script');
   script.src = YT_IFRAME_API_URL;
   script.async = true;
   doc.head.appendChild(script);
@@ -96,6 +133,10 @@ type Command = (p: YtPlayer) => void;
  * `[0, duration - SEEK_END_MARGIN_SECONDS]`, non-finite values are dropped, and a rate
  * the video does not list in `getAvailablePlaybackRates()` is refused (`supportsRate`).
  * In DEV builds every call and event goes to the TV debug log (`tvDebugLog.ts`).
+ *
+ * T-1568: at most `BALANCE.tvPlayer.playerQueueMax` commands wait for the player (the oldest is
+ * dropped). If the IFrame API fails to load or times out, the queue is cleared and
+ * `onError` reports {@link IFRAME_API_LOAD_ERROR_CODE}; the next `load` retries.
  */
 export class YouTubeTvPlayer implements TvPlayer {
   readonly kind = 'youtube' as const;
@@ -209,6 +250,10 @@ export class YouTubeTvPlayer implements TvPlayer {
   isMuted(): boolean {
     return this.muted;
   }
+  /** Commands waiting for the IFrame player (tests check the queue stays bounded). */
+  queuedCommands(): number {
+    return this.queue.length;
+  }
   onError(listener: (code: number) => void): () => void {
     return this.errors.add(listener);
   }
@@ -234,7 +279,11 @@ export class YouTubeTvPlayer implements TvPlayer {
       command(p);
     };
     if (this.player) call(this.player);
-    else this.queue.push(call);
+    else {
+      this.queue.push(call);
+      const over = this.queue.length - BALANCE.tvPlayer.playerQueueMax;
+      if (over > 0) this.queue.splice(0, over);
+    }
   }
 
   private clampSeek(time: number): number {
@@ -277,62 +326,76 @@ export class YouTubeTvPlayer implements TvPlayer {
     if (this.creating || this.player || this.disposed) return;
     this.creating = true;
     this.log('loading IFrame API');
-    void loadYouTubeIframeApi(this.win, this.doc).then((YT) => {
-      if (this.disposed) return;
-      const ownerDoc = this.container.ownerDocument;
-      const mountPoint = ownerDoc.createElement('div');
-      this.container.appendChild(mountPoint);
-      const playerVars: Record<string, number | string> = {
-        autoplay: 0,
-        controls: 0,
-        disablekb: 1,
-        enablejsapi: 1,
-        fs: 0,
-        mute: 1,
-        playsinline: 1,
-        rel: 0,
-      };
-      // Player parameters doc: IFrame API users should always pass their domain as origin.
-      const origin = ownerDoc.defaultView?.location?.origin;
-      if (origin && origin !== 'null') playerVars.origin = origin;
-      const rect = this.container.getBoundingClientRect?.();
-      this.log('create YT.Player', {
-        playerVars,
-        container: { width: this.container.offsetWidth, height: this.container.offsetHeight },
-        onScreen: rect ? { width: Math.round(rect.width), height: Math.round(rect.height) } : null,
-      });
-      const player = new YT.Player(mountPoint, {
-        width: '100%',
-        height: '100%',
-        playerVars,
-        events: {
-          onReady: () => {
-            this.log('onReady', { queued: this.queue.length });
-            if (this.disposed) return;
-            this.player = player;
-            if (this.muted) player.mute();
-            else player.unMute();
-            const queued = this.queue;
-            this.queue = [];
-            for (const command of queued) command(player);
-          },
-          onError: (e) => {
-            this.log('onError', {
-              code: e.data,
-              currentTime: player.getCurrentTime?.(),
-              duration: player.getDuration?.(),
-            });
-            this.errors.emit(e.data);
-          },
-          onStateChange: (e) => {
-            this.log('onStateChange', { state: e.data, name: stateName(e.data) });
-            if (this.disposed || this.player !== player) return;
-            if (e.data === YT_STATE.ended) this.ended.emit();
-            const startedNow = e.data === YT_STATE.playing || e.data === YT_STATE.paused;
-            if (startedNow && !this.started) this.onStarted(player);
-          },
+    loadYouTubeIframeApi(this.win, this.doc).then(
+      (YT) => this.createPlayer(YT),
+      (error: unknown) => this.apiFailed(error),
+    );
+  }
+
+  /** T-1568: the IFrame API did not load; report it for the loaded video and allow a retry. */
+  private apiFailed(error: unknown): void {
+    this.creating = false;
+    if (this.disposed) return;
+    this.queue = [];
+    this.log('IFrame API failed', { error: String(error) });
+    this.errors.emit(IFRAME_API_LOAD_ERROR_CODE);
+  }
+
+  private createPlayer(YT: YtNamespace): void {
+    if (this.disposed) return;
+    const ownerDoc = this.container.ownerDocument;
+    const mountPoint = ownerDoc.createElement('div');
+    this.container.appendChild(mountPoint);
+    const playerVars: Record<string, number | string> = {
+      autoplay: 0,
+      controls: 0,
+      disablekb: 1,
+      enablejsapi: 1,
+      fs: 0,
+      mute: 1,
+      playsinline: 1,
+      rel: 0,
+    };
+    // Player parameters doc: IFrame API users should always pass their domain as origin.
+    const origin = ownerDoc.defaultView?.location?.origin;
+    if (origin && origin !== 'null') playerVars.origin = origin;
+    const rect = this.container.getBoundingClientRect?.();
+    this.log('create YT.Player', {
+      playerVars,
+      container: { width: this.container.offsetWidth, height: this.container.offsetHeight },
+      onScreen: rect ? { width: Math.round(rect.width), height: Math.round(rect.height) } : null,
+    });
+    const player = new YT.Player(mountPoint, {
+      width: '100%',
+      height: '100%',
+      playerVars,
+      events: {
+        onReady: () => {
+          this.log('onReady', { queued: this.queue.length });
+          if (this.disposed) return;
+          this.player = player;
+          if (this.muted) player.mute();
+          else player.unMute();
+          const queued = this.queue;
+          this.queue = [];
+          for (const command of queued) command(player);
         },
-      });
+        onError: (e) => {
+          this.log('onError', {
+            code: e.data,
+            currentTime: player.getCurrentTime?.(),
+            duration: player.getDuration?.(),
+          });
+          this.errors.emit(e.data);
+        },
+        onStateChange: (e) => {
+          this.log('onStateChange', { state: e.data, name: stateName(e.data) });
+          if (this.disposed || this.player !== player) return;
+          if (e.data === YT_STATE.ended) this.ended.emit();
+          const startedNow = e.data === YT_STATE.playing || e.data === YT_STATE.paused;
+          if (startedNow && !this.started) this.onStarted(player);
+        },
+      },
     });
   }
 }

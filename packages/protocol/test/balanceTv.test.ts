@@ -12,5 +12,7 @@ it('BALANCE.tv holds the Phase 4 tuning values (plan §3.1)', () => {
     driftTargetSeconds: 1.0,
     rateLimitCommands: 5,
     rateLimitWindowSeconds: 10,
+    clockSamplesOnJoin: 3,
+    timeRequestsPerWindow: 6,
   });
 });

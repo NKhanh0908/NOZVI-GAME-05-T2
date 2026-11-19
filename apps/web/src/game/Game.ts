@@ -26,6 +26,7 @@ import { AvatarView } from './avatar/AvatarView';
 import { InteractionController, type Prompt } from './interaction/InteractionController';
 import { Nameplate } from './hud/Nameplate';
 import { handleAction } from './interaction/extras';
+import { InteractionFeedback } from './interaction/InteractionFeedback';
 import { activityLabel } from './hud/activityLabel';
 import { RemoteAvatars } from './remote/RemoteAvatars';
 import { EntranceBoard } from './hud/EntranceBoard';
@@ -38,12 +39,14 @@ import {
   type OfficeRoomHandle,
 } from '../net';
 import { CoffeeSteam } from './coffeeSteam';
+import { DeskScreens } from './desk/DeskScreens';
 import { TvScreen } from '../tv/TvScreen';
 import { TvCssLayer } from '../tv/TvCssLayer';
 import { FakeTvPlayer, type TvPlayer } from '../tv/player';
 import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
 import { FakeVideoProvider, YouTubeProvider, type VideoProvider } from '../tv/provider';
 import { TvBinding } from '../tv/TvBinding';
+import { TvRateLimitNotice } from '../tv/rateLimitNotice';
 import { TvMode } from '../tv/TvMode';
 import { TvErrorScreen } from '../tv/TvErrorScreen';
 
@@ -68,10 +71,13 @@ export class Game {
   /** REQ-TV-003: catalog and URL parser; the fake one keeps e2e off ytimg.com thumbnails. */
   readonly tvProvider: VideoProvider =
     tvPlayerKind(import.meta.env) === 'fake' ? new FakeVideoProvider() : new YouTubeProvider();
+  /** T-1568: the server's TV rate-limit notice, shown in the TV panel. */
+  readonly tvNotice = new TvRateLimitNotice();
   /** REQ-TV-004: panel commands go to the room; the player follows the replicated `tv`. */
   readonly tvControls = new TvBinding(this.tvPlayer, {
     catalogDuration: (id) => this.tvProvider.getVideo(id)?.duration ?? null,
     visibility: document,
+    onRateLimited: (n) => this.tvNotice.show(n.retryAfterMs),
   });
   /** REQ-TV-009: per-video error card on the screen; the binding reports changes. */
   private readonly tvErrorScreen = new TvErrorScreen(this.tvLayer.container);
@@ -123,6 +129,10 @@ export class Game {
     officeLayout.interactables.find((i) => i.type === 'coffee_machine')?.position ?? [0, -10, 0],
   );
   private readonly unbindBoard: () => void;
+  /** REQ-INT-002 (T-1155): monitors and desk lamps follow each desk's replicated activity. */
+  private deskScreens: DeskScreens | undefined;
+  /** REQ-INT-001/004/005 (T-1156): target highlight and local cabinet / fridge / door swings. */
+  private readonly feedback: InteractionFeedback;
 
   constructor(
     private readonly host: HTMLElement,
@@ -143,7 +153,7 @@ export class Game {
       roomOccupancy(currentState),
       netRoom.sessionId,
       {
-        onExit: () => this.onExit?.(),
+        onExit: (door) => this.feedback.exitThroughDoor(door, () => this.onExit?.()),
         sendIntent: (intent) => this.sendIntent(intent),
         onAction: (target) => {
           const result = handleAction(target, this.player, this.controller);
@@ -151,6 +161,8 @@ export class Game {
         },
         onTv: () => this.tvMode.enter(),
         brewer: roomBrewer(currentState),
+        onToggleOpen: (target) => this.feedback.toggle(target),
+        isOpen: (id) => this.feedback.openables.isOpen(id),
       },
     );
     this.unbindPrediction = this.bindRoom(netRoom);
@@ -170,9 +182,10 @@ export class Game {
     });
     // T-1152: desk props (screen, keyboard, mouse, lamp, stationery, decor) load with the
     // furniture, so repeats share one InstancedMesh per model part.
+    const desks = deskProps(officeLayout);
     const placements = [
       ...furniturePlacements(officeLayout),
-      ...deskProps(officeLayout).map((p) => p.placement),
+      ...desks.map((p) => p.placement),
       // T-1158: pantry cabinets and coffee machine, cups, rugs, pillows, plants, books.
       ...decorPlacements(officeDecor),
     ];
@@ -182,6 +195,11 @@ export class Game {
       this.furniture = result;
       // T-1149: material table (roughness, metalness, palette colour) on the Kenney materials.
       applyMaterialTable(office);
+      // T-1155: screen and lamp overlays on the desks whose props loaded.
+      this.deskScreens = new DeskScreens(
+        desks.filter((p) => !result.failed.includes(p.placement.box.id)),
+      );
+      office.add(this.deskScreens.group);
       occluders.length = 0;
       office.updateMatrixWorld(true);
       office.traverse((o) => {
@@ -201,6 +219,13 @@ export class Game {
       .catch((error: unknown) => console.warn('Avatar loading failed; keeping capsule.', error));
     this.rig = new CameraRig(this.camera, this.renderer.domElement, occluders);
     this.rig.yaw = this.player.state.heading;
+    this.feedback = new InteractionFeedback({
+      focus: () => (this.tvMode.isOpen ? null : this.controller.focusTarget()),
+      player: () => this.player.state,
+      furniture: () => this.furniture,
+      occluders,
+      releaseOccluders: () => this.rig.releaseOccluders(),
+    });
     this.scene.updateMatrixWorld(true);
     this.rig.update(this.player.mesh.position, 0);
     const lighting = setupLighting(
@@ -250,7 +275,11 @@ export class Game {
               loaded:
                 this.furniture !== undefined && !this.furniture.failed.includes(p.placement.box.id),
             })),
+        /** T-1155: the screen state, lamp and shared texture of one desk. */
+        getDeskScreen: (deskId: string) => this.deskScreens?.info(deskId) ?? null,
         getActivity: () => this.player.activity,
+        /** T-1156: highlighted target, local open states and lifted furniture. */
+        getInteraction: () => this.feedback.snapshot(),
         teleport: (x: number, z: number, heading: number) => {
           this.player.teleport(x, z, heading);
           this.rig.yaw = heading;
@@ -406,6 +435,7 @@ export class Game {
         this.promptText = text;
         this.onPrompt?.(prompt);
       }
+      this.feedback.update(dt);
       this.rig.update(this.player.mesh.position, dt);
       this.player.setOpacity(fadeOpacity(this.rig.distanceToFocus));
       this.onFrame?.(dt);
@@ -413,6 +443,7 @@ export class Game {
       this.steam.update(dt, this.player.activity === 'brewing' || this.remotes.someoneBrewing());
       this.nameplate.set(this.identity.name, activityLabel(this.player.activity));
       this.clock.update(new Date());
+      this.deskScreens?.follow(this.room, Date.now());
       this.frame.render();
       this.labelRenderer.render(this.scene, this.camera);
       this.tvLayer.render(this.camera);
@@ -426,6 +457,7 @@ export class Game {
     this.unbindPrediction();
     this.input.dispose();
     window.removeEventListener('keydown', this.keydown);
+    this.feedback.dispose();
     this.rig.dispose();
     this.furniture?.dispose();
     this.remotes.dispose();
@@ -439,11 +471,13 @@ export class Game {
     this.frame.dispose();
     this.clock.dispose();
     this.steam.dispose();
+    this.deskScreens?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
     this.offTvError();
     this.tvControls.dispose();
+    this.tvNotice.dispose();
     this.tvErrorScreen.dispose();
     this.tvPlayer.dispose();
     this.tvLayer.dispose();

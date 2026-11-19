@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { LayoutBox, OfficeLayout } from '@office/protocol';
 import { FURNITURE } from './furnitureManifest';
 import { fitScale } from './fit';
+import { FurnitureLift, type LiftResult } from './furnitureLift';
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<THREE.Group>>();
@@ -157,6 +158,13 @@ export type FurnitureSummary = {
 };
 
 export type FurnitureHandle = FurnitureSummary & {
+  /**
+   * T-1156: the item's own object (highlight, door swing); an instanced item is lifted out
+   * of its `InstancedMesh` parts until `drop`. Undefined for an id with no model.
+   */
+  lift(id: string): LiftResult | undefined;
+  /** Puts a lifted item back into its instances; returns the meshes that left the scene. */
+  drop(id: string): THREE.Mesh[];
   /** Removes the models from the room and releases the instance buffers. */
   dispose(): void;
 };
@@ -170,6 +178,7 @@ export async function loadFurniture(
   const added: THREE.Object3D[] = [];
   const models: FurnitureSummary['models'] = {};
   let loaded = 0;
+  const lift = new FurnitureLift(room, fitModel);
   // One batch per model file and shadow flag: an InstancedMesh casts for all its instances.
   const batches = new Map<string, FurniturePlacement[]>();
   for (const placement of placements) {
@@ -195,6 +204,8 @@ export async function loadFurniture(
         const replaced = p.replaces ? room.getObjectByName(p.replaces) : undefined;
         if (replaced) room.remove(replaced);
       }
+      if (instanced) lift.registerInstances(source, present, instanced);
+      else objects.forEach((object, i) => lift.registerObject(present[i]!.box.id, object));
       for (const object of objects) room.add(object);
       added.push(...objects);
       loaded += present.length;
@@ -209,7 +220,10 @@ export async function loadFurniture(
     failed,
     instancedMeshes: added.filter((o) => (o as THREE.InstancedMesh).isInstancedMesh).length,
     models,
+    lift: (id) => lift.lift(id),
+    drop: (id) => lift.drop(id),
     dispose() {
+      lift.dispose();
       for (const object of added) {
         object.removeFromParent();
         // Geometry and materials belong to the cached GLB scene and are reused by later games.

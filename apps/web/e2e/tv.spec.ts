@@ -549,3 +549,39 @@ test('a player error shows a per-video message on every page and another video c
     await Promise.all(all.map((p) => p.context().close()));
   }
 });
+
+// T-1568 (REQ-NFR-005): a refused command shows a message in the panel until the block ends.
+test('too many TV commands show a rate-limit message that clears after the wait', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await join(page, 'TvLimit', 'TV-E2E-09');
+  await walkToTv(page);
+  await openTv(page);
+  const panel = page.getByTestId('tv-panel');
+  const notice = panel.getByTestId('tv-rate-limited');
+  await expect(notice).toHaveCount(0);
+  await panel
+    .getByRole('list', { name: 'Catalog' })
+    .getByRole('button', { name: 'Alpha clip' })
+    .click();
+  await expect.poll(async () => (await tvView(page)).status).toBe('playing');
+  // More commands than the server allows per window; the first refusal brings the notice.
+  for (let i = 0; i < 8; i++) {
+    const name = i % 2 === 0 ? 'Pause' : 'Play';
+    await panel.getByRole('button', { name, exact: true }).click();
+    if ((await notice.count()) > 0) break;
+  }
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveText(/^Too many TV commands, try again in \d+ s\.$/);
+  // retryAfterMs is at most the server window (10 s).
+  await expect(notice).toHaveCount(0, { timeout: 12_000 });
+  // Commands work again after the wait.
+  const before = (await tvView(page)).status;
+  await panel
+    .getByRole('button', { name: before === 'playing' ? 'Pause' : 'Play', exact: true })
+    .click();
+  await expect
+    .poll(async () => (await tvView(page)).status)
+    .toBe(before === 'playing' ? 'paused' : 'playing');
+});

@@ -148,6 +148,8 @@ Food Kit models use one textured primitive each and reference `Textures/colormap
 - While the desk's occupant has activity `working`, the monitor shows a simulated desktop drawn on a `CanvasTexture` (wallpaper, a clock, one window with moving text lines) and the desk lamp is on. When the occupant stops working, the screen dims to a lock screen; an empty desk has a dark screen.
 - This needs no new network state: every client derives it from the replicated `activity` and `seatId`. The simulated desktop is decoration and has no usable applications (§7).
 
+**Task 11 result (T-1155, 2026-11-19).** Screens follow every employee's replicated `seatId` / `activity` (local and remote alike): `off` (dark), `locked` (dimmed wallpaper with a padlock) for any seated activity other than `working`, `desktop` (§6.3 default: palette wallpaper, task-bar clock, one window with scrolling text bars, no employee data) while working; the lamp shade glows while its desk shows the desktop. Two shared `CanvasTexture`s; the desktop is redrawn at most once per second and only while shown (`BALANCE.deskScreen`). Draw calls on the observing page in e2e quality (`deskScreen.spec.ts`): 65 with A locked, 66 while A works (+1 lamp shell, +12 triangles); the overlays cost +1 call with nobody seated and at most +3 (screens) +2 (lamp models). Choices in DECISIONS 2026-11-19.
+
 ### 3.4 Coffee routine (changes REQ-INT-003, resolves OQ-015)
 
 - `EmployeeState` gains `item: '' | 'coffee'` and `sips: number`. Activity gains `brewing`. `PROTOCOL_VERSION` moves up by one from the Phase 4 value.
@@ -162,6 +164,8 @@ Food Kit models use one textured primitive each and reference `Textures/colormap
 
 - The current interaction target gets a visible highlight, and the prompt shows the key and the action name.
 - Cabinet, fridge and door interactions play a local open and close animation instead of only a toast. They stay local presentation, as today.
+
+**Task 12 result (T-1156, 2026-11-19).** The target the prompt names is highlighted (emissive tint on cloned materials) and the prompt shows the key as a keycap with the action name; E opens and closes the storage cabinet and the fridge (new decoration-only interactable), walking out of range closes them, and the main door swings open 0.5 s before the exit. All of it is local; instanced items are lifted into their own model only while highlighted or open. Draw calls in e2e quality (`interaction.spec.ts`, same view): 124 out of range, 129 with the cabinet highlighted, 124 again after; the fridge (a single model) adds none. Choices in DECISIONS 2026-11-19.
 
 ### 3.6 2D UI
 

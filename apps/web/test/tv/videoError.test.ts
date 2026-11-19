@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MSG } from '@office/protocol';
 import { FakeTvPlayer } from '../../src/tv/player';
 import { TvBinding, type TvRoom } from '../../src/tv/TvBinding';
 import {
@@ -33,7 +34,10 @@ function setup() {
   const room: TvRoom = {
     sessionId: 'me',
     state,
-    send: (_type, cmd) => sent.push(cmd),
+    // TV commands only; the join's `tv_time` clock requests are not recorded.
+    send: (type: string, cmd: unknown) => {
+      if (type === MSG.tv) sent.push(cmd);
+    },
     onStateChange: Object.assign(
       (cb: (s: { tv?: Tv }) => void) => {
         listeners.add(cb);

@@ -6,6 +6,8 @@ import {
   parseIntent,
   parseJoinOptions,
   parseTvCommand,
+  parseTvTimeReply,
+  parseTvTimeRequest,
 } from '../../src/net/messages';
 import { EMOTES } from '../../src/activity';
 import { officeLayout } from '../../src/layout/layout';
@@ -163,5 +165,42 @@ describe('parseTvCommand (REQ-TV-005)', () => {
     for (const raw of [null, undefined, 'play', 3, [{ type: 'play' }]]) {
       expect(parseTvCommand(raw)).toBeNull();
     }
+  });
+});
+
+describe('tv_time clock sample messages (OQ-023, T-1567)', () => {
+  it('accepts a request with an integer id and returns a clean copy', () => {
+    expect(parseTvTimeRequest({ id: 0 })).toEqual({ id: 0 });
+    expect(parseTvTimeRequest({ id: MAX_SEQ, extra: 'x' })).toEqual({ id: MAX_SEQ });
+  });
+  it.each([
+    ['missing id', {}],
+    ['negative id', { id: -1 }],
+    ['fractional id', { id: 1.5 }],
+    ['id above MAX_SEQ', { id: MAX_SEQ + 1 }],
+    ['string id', { id: '1' }],
+    ['NaN id', { id: NaN }],
+    ['null', null],
+    ['undefined', undefined],
+    ['array', [{ id: 1 }]],
+    ['number', 1],
+  ])('rejects a request with %s', (_label, raw) => {
+    expect(parseTvTimeRequest(raw)).toBeNull();
+  });
+  it('accepts a reply with an id and a finite positive server time', () => {
+    expect(parseTvTimeReply({ id: 3, serverNow: 1_794_000_000_000, x: 1 })).toEqual({
+      id: 3,
+      serverNow: 1_794_000_000_000,
+    });
+  });
+  it.each([
+    ['missing serverNow', { id: 1 }],
+    ['zero serverNow', { id: 1, serverNow: 0 }],
+    ['infinite serverNow', { id: 1, serverNow: Infinity }],
+    ['string serverNow', { id: 1, serverNow: '5' }],
+    ['bad id', { id: -1, serverNow: 5 }],
+    ['non-object', 'tv_time'],
+  ])('rejects a reply with %s', (_label, raw) => {
+    expect(parseTvTimeReply(raw)).toBeNull();
   });
 });

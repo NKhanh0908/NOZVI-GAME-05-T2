@@ -7,8 +7,9 @@ export type ActionResult = { message?: string };
 export const MACHINE_IN_USE = 'Machine in use';
 
 /**
- * REQ-INT-003/004: pantry, sofa rest and cabinet feedback. Pantry actions and sofa rest are
- * sent as intents (the server runs the timers); cabinet feedback stays local.
+ * REQ-INT-003: pantry and sofa rest. Pantry actions and sofa rest are sent as intents (the
+ * server runs the timers). Cabinet and fridge open locally through `Openables` (T-1156,
+ * REQ-INT-004), not here.
  * - Coffee machine: `brew` with an empty hand (T-1154). The server refuses a busy machine
  *   without a reply, so a machine busy in room state is answered here with "Machine in use".
  * - Water dispenser: the single-step `drink` with an empty hand (it shows a glass).
@@ -36,6 +37,5 @@ export function handleAction(
     for (const seat of officeLayout.sofaSeats) if (c.requestSeat(seat.id, 'sofa')) break;
     return {};
   }
-  if (t.type === 'storage_cabinet') return { message: 'Cabinet opened' };
   return {};
 }
