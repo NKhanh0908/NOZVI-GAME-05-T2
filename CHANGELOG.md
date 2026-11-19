@@ -83,6 +83,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Fixed
 
+- TV follow-ups (T-1568, FEAT-67): a server `tv_rate_limited` notice now shows "Too many TV commands, try again in N s." in the TV panel until `retryAfterMs` has passed (`apps/web/src/tv/rateLimitNotice.ts`, wired through `TvBinding`'s `onRateLimited` in `Game.ts`; commands are still dropped while blocked; limits unchanged). The YouTube IFrame API loader rejects on a script error or after `BALANCE.tvPlayer.iframeApiTimeoutMs` (15 s) and forgets the attempt so the next load retries; the player then reports the `unknown` per-video error (code -1) and clears its command queue, which is capped at `BALANCE.tvPlayer.playerQueueMax` (32, oldest dropped). `readTv` reads the decoded `provider` (unknown values fall back to `youtube`) instead of hard-coding it, and the schema round trip asserts it. Tests: `test/tv/rateLimitNotice.test.tsx`, `test/tv/player.test.ts` (load failure), `packages/protocol/test/net/schema.test.ts`, e2e `tv.spec.ts` (rate-limit message).
+
 - PR #4 CI e2e red (2026-11-18): with the Phase 4.1 props, decor and shell details, headless SwiftShader rendering fell to 5.8 FPS (one employee) and 2.7 FPS (three), so `remote.spec` caught too few walking frames and the three-page TV error spec timed out. Shadow maps are now drawn in `high` quality only (`lighting.ts` `shadowsEnabled`); `e2e` measures 8.8 / 4.7 FPS, above the pre-Phase 4.1 8.3 / 4.4. Real-hardware rendering is unchanged.
 
 - Desk screens, keyboards and mice faced away from the chair (owner report 2026-11-18): Kenney models face +Z at rotY 0 while the layout gives these components the seat's rotY; they now face the seat (seat rotY + 180°). Unit test checks every desk.
