@@ -94,10 +94,14 @@ describe('activity', () => {
     // Without `resume` a finished drink returns to idle (a standing sip or a water drink).
     expect(nextActivity('drinking', { type: 'actionDone' })).toBe('idle');
     // A seated sip counts like a standing one.
-    const held = nextHeld('drinking', { item: 'coffee', sips: 2 }, {
-      type: 'actionDone',
-      resume: 'working',
-    });
+    const held = nextHeld(
+      'drinking',
+      { item: 'coffee', sips: 2 },
+      {
+        type: 'actionDone',
+        resume: 'working',
+      },
+    );
     expect(held).toEqual({ item: 'coffee', sips: 1 });
   });
   it('reads replicated item strings', () => {

@@ -17,6 +17,8 @@ export function activityLabel(activity: Activity): string {
       return 'Break';
     case 'resting':
       return 'Resting';
+    case 'brewing':
+      return 'Making coffee';
     default:
       return 'Online';
   }

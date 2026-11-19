@@ -116,6 +116,19 @@ export function applyTyping(root: THREE.Object3D, rig: Rig, time: number, weight
   }
 }
 
+/**
+ * REQ-INT-003 sip while `drinking` (T-1154): the right hand comes up in front of the mouth
+ * with the cup or glass it holds, standing or seated.
+ */
+export function applySip(root: THREE.Object3D, rig: Rig, weight: number): void {
+  const a = rig.right;
+  if (weight <= 0 || !a) return;
+  const f = frameOf(root, rig);
+  aimBone(a.upper, a.lower, dir(f, 0.55, -0.6, 0.3), weight);
+  aimBone(a.lower, a.hand, dir(f, 0.2, 1, -0.55), weight);
+  aimBone(a.hand, a.finger, dir(f, 0.6, 0.6, -0.2), weight);
+}
+
 /** Rotates `bone` by `angle` (rad) about the world `axis`, on top of its current pose. */
 export function turnBone(bone: THREE.Object3D | null, axis: THREE.Vector3, angle: number): void {
   if (!bone || angle === 0) return;

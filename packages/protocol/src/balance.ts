@@ -33,6 +33,24 @@ export const BALANCE = {
       stretch: { swayHz: 0.5, sway: 0.1, lean: 0.15 },
     },
   },
+  /**
+   * Client-only coffee presentation (REQ-INT-003, T-1154). Sizes and offsets in metres (a
+   * prop is scaled uniformly to its height or its max width, whichever is smaller);
+   * `grip` is relative to the hand bone along the avatar's forward / up / right axes;
+   * `rest` puts a seated employee's cup `inset` past the near edge of the desk or coffee
+   * table and `side` to the seat's right, at least `margin` inside the top. Steam starts
+   * `aboveMachine` above the machine's layout position and puffs rise at `riseSpeed` (m/s)
+   * for `height`.
+   */
+  coffeeView: {
+    cupHeight: 0.1,
+    cupMaxWidth: 0.13,
+    glassHeight: 0.12,
+    glassMaxWidth: 0.08,
+    grip: { forward: 0.03, up: -0.02, right: 0 },
+    rest: { inset: 0.14, side: 0.45, margin: 0.06 },
+    steam: { puffs: 14, riseSpeed: 0.22, height: 0.35, size: 0.06, aboveMachine: 0.2 },
+  },
   movement: { walkSpeed: 2.0, runSpeed: 4.0, capsuleRadius: 0.3, turnRate: 12 },
   camera: {
     fovDeg: 60,
