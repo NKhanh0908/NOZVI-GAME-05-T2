@@ -93,9 +93,13 @@ export function readTv(tv: {
   const status = (TV_STATUSES as readonly string[]).includes(tv.status)
     ? (tv.status as TvStatus)
     : 'idle';
+  // T-1568: read the decoded provider; an unknown value falls back to the only provider.
+  const provider = (TV_PROVIDERS as readonly string[]).includes(tv.provider)
+    ? (tv.provider as TvProvider)
+    : TV_PROVIDERS[0];
   return {
     videoId: tv.videoId ?? null,
-    provider: 'youtube',
+    provider,
     status,
     currentTime: tv.currentTime,
     updatedAt: tv.updatedAt,

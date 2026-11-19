@@ -46,6 +46,7 @@ import { FakeTvPlayer, type TvPlayer } from '../tv/player';
 import { tvPlayerKind, YouTubeTvPlayer } from '../tv/youtubePlayer';
 import { FakeVideoProvider, YouTubeProvider, type VideoProvider } from '../tv/provider';
 import { TvBinding } from '../tv/TvBinding';
+import { TvRateLimitNotice } from '../tv/rateLimitNotice';
 import { TvMode } from '../tv/TvMode';
 import { TvErrorScreen } from '../tv/TvErrorScreen';
 
@@ -70,10 +71,13 @@ export class Game {
   /** REQ-TV-003: catalog and URL parser; the fake one keeps e2e off ytimg.com thumbnails. */
   readonly tvProvider: VideoProvider =
     tvPlayerKind(import.meta.env) === 'fake' ? new FakeVideoProvider() : new YouTubeProvider();
+  /** T-1568: the server's TV rate-limit notice, shown in the TV panel. */
+  readonly tvNotice = new TvRateLimitNotice();
   /** REQ-TV-004: panel commands go to the room; the player follows the replicated `tv`. */
   readonly tvControls = new TvBinding(this.tvPlayer, {
     catalogDuration: (id) => this.tvProvider.getVideo(id)?.duration ?? null,
     visibility: document,
+    onRateLimited: (n) => this.tvNotice.show(n.retryAfterMs),
   });
   /** REQ-TV-009: per-video error card on the screen; the binding reports changes. */
   private readonly tvErrorScreen = new TvErrorScreen(this.tvLayer.container);
@@ -473,6 +477,7 @@ export class Game {
     this.labelRenderer.domElement.remove();
     this.offTvError();
     this.tvControls.dispose();
+    this.tvNotice.dispose();
     this.tvErrorScreen.dispose();
     this.tvPlayer.dispose();
     this.tvLayer.dispose();

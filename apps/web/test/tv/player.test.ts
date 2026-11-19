@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BALANCE } from '@office/protocol';
+import { TvBinding, type TvRoom } from '../../src/tv/TvBinding';
+import { videoError, type TvVideoError } from '../../src/tv/videoError';
 import { FakeTvPlayer, type TvPlayer } from '../../src/tv/player';
 import {
   createTvDebugLog,
@@ -8,6 +11,7 @@ import {
   type TvLogTarget,
 } from '../../src/tv/tvDebugLog';
 import {
+  IFRAME_API_LOAD_ERROR_CODE,
   loadYouTubeIframeApi,
   SEEK_END_MARGIN_SECONDS,
   YT_STATE,
@@ -183,7 +187,8 @@ describe('YouTubeTvPlayer', () => {
     const b = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc);
     b.load('CCCCCCCCCCC', 0);
     void loadYouTubeIframeApi(yt.win, yt.doc);
-    expect(yt.scripts).toEqual([{ src: YT_IFRAME_API_URL, async: true }]);
+    expect(yt.scripts).toHaveLength(1);
+    expect(yt.scripts[0]).toMatchObject({ src: YT_IFRAME_API_URL, async: true });
     expect(yt.doc.head.appendChild).toHaveBeenCalledOnce();
 
     yt.finishLoading();
@@ -289,6 +294,98 @@ describe('YouTubeTvPlayer', () => {
     yt.finishLoading();
     await flush();
     expect(yt.players).toHaveLength(0);
+  });
+});
+
+describe('YouTubeTvPlayer IFrame API load failure (T-1568)', () => {
+  /** Fires the `error` event of the last script the loader added. */
+  const scriptError = (yt: ReturnType<typeof stubYouTube>) =>
+    (yt.scripts.at(-1) as { onerror?: () => void }).onerror?.();
+
+  it('rejects the loader on a script error and forgets the attempt', async () => {
+    const yt = stubYouTube();
+    const earlier = vi.fn();
+    yt.win.onYouTubeIframeAPIReady = earlier;
+    const loading = loadYouTubeIframeApi(yt.win, yt.doc);
+    scriptError(yt);
+    await expect(loading).rejects.toThrow(/failed to load/);
+    expect(yt.win.onYouTubeIframeAPIReady).toBe(earlier); // handler restored
+    // The next call adds a fresh script and can still succeed.
+    const retry = loadYouTubeIframeApi(yt.win, yt.doc);
+    expect(yt.scripts).toHaveLength(2);
+    yt.finishLoading();
+    await expect(retry).resolves.toBeDefined();
+  });
+
+  it('rejects the loader when YT is not ready in time', async () => {
+    vi.useFakeTimers();
+    try {
+      const yt = stubYouTube();
+      const loading = loadYouTubeIframeApi(yt.win, yt.doc);
+      const result = expect(loading).rejects.toThrow(/not ready/);
+      vi.advanceTimersByTime(BALANCE.tvPlayer.iframeApiTimeoutMs);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a script error shows the unknown video error and keeps the queue bounded', async () => {
+    const yt = stubYouTube();
+    const p = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc, null);
+    const codes: number[] = [];
+    p.onError((code) => codes.push(code));
+    p.load('AAAAAAAAAAA', 0);
+    for (let i = 0; i < BALANCE.tvPlayer.playerQueueMax * 3; i++) {
+      p.play();
+      p.pause();
+    }
+    expect(p.queuedCommands()).toBe(BALANCE.tvPlayer.playerQueueMax);
+    scriptError(yt);
+    await flush();
+    expect(codes).toEqual([IFRAME_API_LOAD_ERROR_CODE]);
+    expect(videoError('AAAAAAAAAAA', codes[0]!)).toMatchObject({ kind: 'unknown' });
+    expect(p.queuedCommands()).toBe(0);
+    expect(yt.players).toHaveLength(0);
+
+    // The next load tries the script again and the player comes up.
+    p.load('BBBBBBBBBBB', 0);
+    expect(yt.scripts).toHaveLength(2);
+    yt.finishLoading();
+    await flush();
+    expect(yt.players).toHaveLength(1);
+  });
+
+  it('the binding shows the error state for the loaded video', async () => {
+    const yt = stubYouTube();
+    const p = new YouTubeTvPlayer(yt.container as unknown as HTMLElement, yt.win, yt.doc, null);
+    const binding = new TvBinding(p, { every: () => () => undefined, visibility: null });
+    const errors: (TvVideoError | null)[] = [];
+    binding.onErrorChange((e) => errors.push(e));
+    const room: TvRoom = {
+      sessionId: 'me',
+      state: {
+        tv: {
+          videoId: 'AAAAAAAAAAA',
+          provider: 'youtube',
+          status: 'playing',
+          currentTime: 0,
+          updatedAt: Date.now(),
+          controllerSessionId: 'me',
+        },
+      },
+      send: vi.fn(),
+      onStateChange: Object.assign(() => undefined, { remove: () => undefined }),
+      onMessage: () => () => undefined,
+    };
+    binding.attach(room);
+    expect(yt.scripts).toHaveLength(1);
+    scriptError(yt);
+    await flush();
+    expect(binding.view().error).toMatchObject({ videoId: 'AAAAAAAAAAA', kind: 'unknown' });
+    expect(errors.at(-1)).toMatchObject({ kind: 'unknown' });
+    expect(p.queuedCommands()).toBeLessThanOrEqual(BALANCE.tvPlayer.playerQueueMax);
+    binding.dispose();
   });
 });
 

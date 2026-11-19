@@ -336,3 +336,10 @@ Context: The owner committed the official Kenney Furniture Kit 2.0 and Food Kit 
 Choice (owner, 2026-11-19): The zips stay removed. The models in use live in `apps/web/public/assets/` with licence files and credits in `CREDITS.md`. This supersedes "The zips stay on `dev` only" in the T-1147 entry.
 Alternatives: Restore the zips from 6c15589 (keeps 9.7 MB of unused binaries in the tree).
 Consequence: Provenance of the copied files is the git history at 6c15589 plus `CREDITS.md`; a future asset task that needs more files from these packs downloads the official zips again into the gitignored `kenney/`.
+
+## 2026-11-19 — TV IFrame API load failure is a per-video `unknown` error (T-1568)
+
+Context: `loadYouTubeIframeApi` never settled when the script was blocked or offline, so the TV stayed blank and the player's command queue grew for the session. The brief asked for the existing per-video error UI.
+Choice: The loader rejects on the script `error` event or after `BALANCE.tvPlayer.iframeApiTimeoutMs` (15 s), removes the script and restores the earlier ready handler. The player reports code -1 (`IFRAME_API_LOAD_ERROR_CODE`, kind `unknown`, "The player reported an error."), clears its queue and lets the next `load` try the script again. The queue is capped at `BALANCE.tvPlayer.playerQueueMax` (32), dropping the oldest command. `readTv` narrows an unknown decoded `provider` to `youtube`, like an unknown `status` becomes `idle`.
+Alternatives: A separate "YouTube unavailable" panel state (new UI, not in the brief); automatic retries on a timer (requests to youtube.com nobody asked for).
+Consequence: Like other video errors, the video that was loading is marked failed for the session on that client and is not offered again; any other video retries the script. New tunables live in `BALANCE.tvPlayer` so the plan §3.1 `BALANCE.tv` table stays unchanged.

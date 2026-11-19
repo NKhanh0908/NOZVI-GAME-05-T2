@@ -128,6 +128,28 @@ describe('SharedTVState (REQ-TV-004)', () => {
       controllerSessionId: null,
     });
   });
+  it('replicates the provider field and readTv returns the decoded value (T-1568)', () => {
+    const state = new OfficeState();
+    const encoder = new Encoder(state);
+    const decoded = new OfficeState();
+    const decoder = new Decoder(decoded);
+    // A non-default value proves the field is encoded, not just defaulted on the decoder.
+    state.tv.provider = 'other-provider';
+    decoder.decode(encoder.encodeAll());
+    encoder.discardChanges();
+    expect(decoded.tv.provider).toBe('other-provider');
+
+    state.tv.provider = 'youtube';
+    state.tv.videoId = 'dQw4w9WgXcQ';
+    decoder.decode(encoder.encode());
+    expect(decoded.tv.provider).toBe('youtube');
+    expect(readTv(decoded.tv).provider).toBe('youtube');
+  });
+  it('readTv maps an unknown provider to the only known provider', () => {
+    expect(
+      readTv({ provider: 'vimeo', status: 'idle', currentTime: 0, updatedAt: 0 }).provider,
+    ).toBe('youtube');
+  });
   it('readTv maps an unknown status to idle', () => {
     expect(readTv({ provider: 'youtube', status: 'x', currentTime: 1, updatedAt: 2 }).status).toBe(
       'idle',

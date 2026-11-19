@@ -3,6 +3,7 @@ import type { TvControls, TvView, TvViewSource } from '../tv/controls';
 import type { VideoProvider } from '../tv/provider';
 import { formatTime, readUrlField, seekMax } from '../tv/panelModel';
 import { VIDEO_ERROR_TITLE } from '../tv/videoError';
+import type { TvNoticeSource } from '../tv/rateLimitNotice';
 import { color, font, hudPanel, radius, space } from './tokens';
 
 /** How often the panel refreshes the position and seek bar (ms). */
@@ -12,6 +13,8 @@ type Props = {
   provider: VideoProvider;
   controls: TvControls;
   source: TvViewSource;
+  /** T-1568: rate-limit message source; the panel shows its text while it is set. */
+  notice?: TvNoticeSource;
   onClose(): void;
 };
 
@@ -20,8 +23,9 @@ type Props = {
  * Stop, "Click to unmute" and an always-visible Close. It only calls {@link TvControls},
  * so the same panel drives the local player now and the room later (P4.9).
  */
-export function TvPanel({ provider, controls, source, onClose }: Props) {
+export function TvPanel({ provider, controls, source, notice, onClose }: Props) {
   const [view, setView] = useState<TvView>(() => source.view());
+  const [noticeText, setNoticeText] = useState<string | null>(() => notice?.message() ?? null);
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState<string | null>(null);
   const [scrub, setScrub] = useState<number | null>(null);
@@ -29,10 +33,17 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
   const catalog = provider.search('');
 
   useEffect(() => {
-    const refresh = () => setView(source.view());
+    const refresh = () => {
+      setView(source.view());
+      setNoticeText(notice?.message() ?? null); // the countdown follows the poll
+    };
     const timer = setInterval(refresh, VIEW_POLL_MS);
-    return () => clearInterval(timer);
-  }, [source]);
+    const offNotice = notice?.subscribe(() => setNoticeText(notice.message()));
+    return () => {
+      clearInterval(timer);
+      offNotice?.();
+    };
+  }, [source, notice]);
 
   // Seek once the bar is released (native `change`), not on every `input` while dragging.
   useEffect(() => {
@@ -106,6 +117,12 @@ export function TvPanel({ provider, controls, source, onClose }: Props) {
           ? 'Nothing playing'
           : `${view.error ? "Can't play" : view.status === 'playing' ? 'Playing' : 'Paused'}: ${current?.title ?? view.videoId}`}
       </div>
+
+      {noticeText && (
+        <div role="status" data-testid="tv-rate-limited" style={{ color: color.hudDangerText }}>
+          {noticeText}
+        </div>
+      )}
 
       {view.error && (
         <div
