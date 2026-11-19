@@ -83,6 +83,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: Se
 
 ### Fixed
 
+- TV late joiner on a machine whose clock differs from the server (T-1567, OQ-023, Phase 4 review): it kept clock offset 0 until the next TV command, so its video was off by the clock skew and the drift sync could not see it. On join and reconnect `TvBinding` now asks for 3 server clock samples with the new `tv_time` message (`{ id }`, reply `{ id, serverNow }`, validated by `parseTvTimeRequest` / `parseTvTimeReply`), feeds them to `ClockOffsetEstimator` as lower bounds and seeks a playing TV that is now off by 0.5 s or more. The server answers behind its own per-client limit (6 per 10 s, `BALANCE.tv.clockSamplesOnJoin` / `timeRequestsPerWindow`). `PROTOCOL_VERSION` 6 -> 7.
+
 - PR #4 CI e2e red (2026-11-18): with the Phase 4.1 props, decor and shell details, headless SwiftShader rendering fell to 5.8 FPS (one employee) and 2.7 FPS (three), so `remote.spec` caught too few walking frames and the three-page TV error spec timed out. Shadow maps are now drawn in `high` quality only (`lighting.ts` `shadowsEnabled`); `e2e` measures 8.8 / 4.7 FPS, above the pre-Phase 4.1 8.3 / 4.4. Real-hardware rendering is unchanged.
 
 - Desk screens, keyboards and mice faced away from the chair (owner report 2026-11-18): Kenney models face +Z at rotY 0 while the layout gives these components the seat's rotY; they now face the seat (seat rotY + 180°). Unit test checks every desk.
