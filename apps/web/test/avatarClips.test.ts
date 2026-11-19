@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { BALANCE, EMOTES, canEmote } from '@office/protocol';
@@ -303,6 +303,69 @@ it.each(['men_suit', 'women_suit'] as const)(
     expect(armDifference(seated, working)).toBeLessThan(1e-4);
     seated.dispose();
     working.dispose();
+  },
+);
+
+describe.each(['men_suit', 'women_suit'] as const)(
+  'make-coffee motion on %s (T-1611)',
+  (avatarId) => {
+    it.each([
+      ['brewDone', 'idle'],
+      ['cancel', 'walking'],
+    ] as const)(
+      'moves the arms while brewing and returns to the reference pose after %s',
+      async (_, after) => {
+        vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(loadLocalGltf);
+        // Same clip timeline on both views: brewing keeps the idle clip under the overlay.
+        const reference = await AvatarView.load(avatarId);
+        const brewing = await AvatarView.load(avatarId);
+        for (const v of [reference, brewing]) v.root.rotation.y = -0.7;
+        reference.setActivity('idle');
+        brewing.setActivity('brewing');
+        const step = (n: number) => {
+          for (let i = 0; i < n; i++) {
+            reference.update(1 / 60);
+            brewing.update(1 / 60);
+            expect(brewing.hasFiniteBones()).toBe(true);
+          }
+        };
+        step(30);
+        expect(brewing.brew).toBe(1);
+        expect(reference.brew).toBe(0);
+        expect(armDifference(reference, brewing)).toBeGreaterThan(0.3);
+        // Both hands reach forward toward the machine, in front of the shoulders.
+        brewing.root.updateMatrixWorld(true);
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+          brewing.root.getWorldQuaternion(new THREE.Quaternion()),
+        );
+        for (const side of ['L', 'R']) {
+          const reach = bone(brewing, `Hand${side}`)
+            .getWorldPosition(new THREE.Vector3())
+            .sub(bone(brewing, `UpperArm${side}`).getWorldPosition(new THREE.Vector3()))
+            .dot(forward);
+          expect(reach).toBeGreaterThan(0.2);
+        }
+        // The right hand presses over time: the pose changes along the brew.
+        const poses: THREE.Quaternion[][] = [];
+        for (let i = 0; i < 8; i++) {
+          poses.push(armPose(brewing));
+          step(9);
+        }
+        const spread = Math.max(
+          ...poses.map((p) => Math.max(...p.map((q, i) => q.angleTo(poses[0]![i]!)))),
+        );
+        expect(spread).toBeGreaterThan(0.05);
+
+        // brewDone (idle) or cancel (walking): the overlay fades out over the cross-fade.
+        reference.setActivity(after);
+        brewing.setActivity(after);
+        step(Math.ceil(BALANCE.activity.crossFadeSeconds * 60) + 1);
+        expect(brewing.brew).toBe(0);
+        expect(armDifference(reference, brewing)).toBeLessThan(1e-4);
+        reference.dispose();
+        brewing.dispose();
+      },
+    );
   },
 );
 

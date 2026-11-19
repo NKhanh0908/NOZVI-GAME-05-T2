@@ -36,6 +36,8 @@ export type RemoteView = {
   dispose(): void;
   /** Typing overlay weight, 0 to 1 (T-1219). */
   readonly typing?: number;
+  /** Make-coffee overlay weight, 0 to 1 (T-1611). */
+  readonly brew?: number;
 };
 /** The parts of `Nameplate` a remote avatar uses. */
 export type RemoteNameplate = {
@@ -66,6 +68,8 @@ export type RemoteInfo = {
   status: string;
   /** Typing overlay weight as drawn, 0 to 1 (T-1219). */
   typing: number;
+  /** Make-coffee overlay weight as drawn, 0 to 1 (T-1611). */
+  brew: number;
   /** Emote as drawn ('' = none; T-1222). */
   emote: EmoteId | '';
   /** Replicated held item and sips (REQ-INT-003, T-1154). */
@@ -327,6 +331,7 @@ export class RemoteAvatars {
       connected: r.employee.connected !== false,
       status: r.status,
       typing: r.view?.typing ?? 0,
+      brew: r.view?.brew ?? 0,
       emote: r.emote,
       item: toItem(r.employee.item ?? ''),
       sips: toItem(r.employee.item ?? '') === '' ? 0 : (r.employee.sips ?? 0),

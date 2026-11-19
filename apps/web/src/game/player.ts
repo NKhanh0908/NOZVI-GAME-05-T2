@@ -165,6 +165,11 @@ export class Player {
     return this.view?.typing ?? 0;
   }
 
+  /** Make-coffee overlay weight, 0 to 1 (T-1611). */
+  get brew(): number {
+    return this.view?.brew ?? 0;
+  }
+
   /**
    * Fades the player mesh (e.g. when the camera is close); 1 is fully opaque. Only the opacity
    * uniform changes: the materials always sit in the transparent pass with depth writes on, so a

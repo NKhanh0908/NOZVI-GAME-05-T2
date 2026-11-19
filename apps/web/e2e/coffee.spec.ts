@@ -3,9 +3,10 @@ import { TO_COFFEE, activity, atCoffee, atDesk, walkTo } from './helpers';
 
 // T-1154 (REQ-INT-003): E at the coffee machine brews on the server; the brewer then holds a
 // coffee with three sips that every page draws (hand standing, desk seated). F sips. A busy
-// machine shows "Machine in use" to others; walking away cancels a brew.
+// machine shows "Machine in use" to others; walking away cancels a brew. T-1610: the cup is
+// stowed while the hands are busy (a wave) and back in the hand after.
 
-type Prop = { kind: 'cup' | 'glass'; place: 'hand' | 'rest' } | null;
+type Prop = { kind: 'cup' | 'glass'; place: 'hand' | 'rest' | 'hidden' } | null;
 type Held = { item: string; sips: number; prop: Prop };
 type Remote = {
   name: string;
@@ -14,11 +15,14 @@ type Remote = {
   item: string;
   sips: number;
   prop: Prop;
+  /** Make-coffee overlay weight as drawn (T-1611). */
+  brew: number;
 };
 type DrawCalls = { total: number; main: number; shadow: number; triangles: number };
 type Office = {
   getRemotes(): Remote[];
   getHeld(): Held;
+  getBrew(): number;
   isSteaming(): boolean;
   getDrawCalls(): DrawCalls;
   isLightingReady(): boolean;
@@ -102,6 +106,7 @@ test('walking away during brewing cancels it and hands over nothing', async () =
   await ana.keyboard.up('s');
   await expect.poll(() => activity(ana)).toBe('idle');
   await expect.poll(() => steaming(ben)).toBe(false);
+  await expect.poll(async () => (await remote(ben, 'Ana'))?.brew).toBe(0);
   // Longer than the brew would have taken: still an empty hand on both pages.
   await ana.waitForTimeout(4_500);
   expect(await held(ana)).toEqual({ item: '', sips: 0, prop: null });
@@ -125,6 +130,11 @@ test('page A brews (B sees Machine in use), both pages see the coffee with 3 sip
   await ben.keyboard.press('e');
   await expect.poll(() => steaming(ben)).toBe(true);
   await expect.poll(() => steaming(ana)).toBe(true);
+  // T-1611: the make-coffee motion plays on Ana's own avatar and on Ben's view of her.
+  await expect
+    .poll(() => ana.evaluate(() => (window as unknown as Win).__office.getBrew()))
+    .toBe(1);
+  await expect.poll(async () => (await remote(ben, 'Ana'))?.brew).toBe(1);
   await expect(prompt(ana)).toContainText('Brewing coffee…');
   await expect(ana.getByTestId('prompt-progress')).toBeVisible();
   const brewing = await drawCalls(ben);
@@ -142,6 +152,7 @@ test('page A brews (B sees Machine in use), both pages see the coffee with 3 sip
     .poll(() => held(ana))
     .toEqual({ item: 'coffee', sips: 3, prop: { kind: 'cup', place: 'hand' } });
   await expect.poll(() => steaming(ben)).toBe(false);
+  await expect.poll(async () => (await remote(ben, 'Ana'))?.brew).toBe(0);
   await expect(prompt(ana)).toHaveText('F — Sip');
   // Ben's refused E changed nothing.
   expect(await activity(ben)).toBe('idle');
@@ -154,9 +165,24 @@ test('page A brews (B sees Machine in use), both pages see the coffee with 3 sip
       brewing,
     )} holding ${JSON.stringify(holding)}`,
   );
-  // Steam is one Points draw; the cup a few meshes at most.
+  // Steam is one Points draw (the make-coffee motion adds none); the cup a few meshes at most.
   expect(brewing.total - before.total).toBeLessThanOrEqual(2);
   expect(holding.total - before.total).toBeLessThanOrEqual(4);
+
+  // T-1610: G waves; the cup is stowed on both pages while the arm is up, then comes back.
+  await ana.keyboard.press('g');
+  await expect.poll(async () => (await held(ana)).prop).toEqual({ kind: 'cup', place: 'hidden' });
+  await expect
+    .poll(async () => (await remote(ben, 'Ana'))?.prop)
+    .toEqual({ kind: 'cup', place: 'hidden' });
+  if (shots) await ben.screenshot({ path: `${shots}/t1610-wave-cup-hidden.png` });
+  await expect
+    .poll(async () => (await held(ana)).prop, { timeout: 15_000 })
+    .toEqual({ kind: 'cup', place: 'hand' });
+  await expect
+    .poll(async () => (await remote(ben, 'Ana'))?.prop, { timeout: 15_000 })
+    .toEqual({ kind: 'cup', place: 'hand' });
+  expect((await held(ana)).sips).toBe(3);
 
   // F sips: each sip counts when the drink ends; the last one clears the cup on both pages.
   for (const left of [2, 1, 0]) {

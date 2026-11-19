@@ -117,6 +117,31 @@ export function applyTyping(root: THREE.Object3D, rig: Rig, time: number, weight
 }
 
 /**
+ * REQ-INT-003 make-coffee motion while `brewing` (T-1611): both upper arms reach forward and
+ * down to the machine on the counter, the left hand holds the cup under the spout and the
+ * right hand presses the machine's button periodically (`BALANCE.avatar.brew`). `time` is the
+ * view's own clock in seconds.
+ */
+export function applyBrew(root: THREE.Object3D, rig: Rig, time: number, weight: number): void {
+  if (weight <= 0) return;
+  const f = frameOf(root, rig);
+  const { pressHz, pressDepth, reach, elbowOut, handsIn } = BALANCE.avatar.brew;
+  const press = Math.max(0, Math.sin(time * pressHz * 2 * Math.PI)) ** 2 * pressDepth;
+  const left = rig.left;
+  if (left) {
+    aimBone(left.upper, left.lower, dir(f, reach, -1, -elbowOut), weight);
+    aimBone(left.lower, left.hand, dir(f, 1, -0.05, handsIn), weight);
+    aimBone(left.hand, left.finger, dir(f, 1, -0.1, handsIn * 0.5), weight);
+  }
+  const right = rig.right;
+  if (right) {
+    aimBone(right.upper, right.lower, dir(f, reach, -1 + press * 0.3, elbowOut), weight);
+    aimBone(right.lower, right.hand, dir(f, 1, 0.3 - press, -handsIn), weight);
+    aimBone(right.hand, right.finger, dir(f, 1, -0.2 - press * 1.5, -handsIn * 0.5), weight);
+  }
+}
+
+/**
  * REQ-INT-003 sip while `drinking` (T-1154): the right hand comes up in front of the mouth
  * with the cup or glass it holds, standing or seated.
  */
