@@ -11,10 +11,12 @@ import {
   parseIntent,
   type Aabb,
   type Activity,
+  type ActivityEvent,
   type Held,
   type IntentMessage,
   type Interactable,
   type OfficeLayout,
+  type SeatedActivity,
   type Vec3,
 } from '@office/protocol';
 import { MovementSim, stepBody, type MovementBody } from './movement';
@@ -75,7 +77,11 @@ export function inRange(body: { x: number; z: number }, target: Interactable): b
   return Math.hypot(ix - body.x, iz - body.z) <= target.interactionRange;
 }
 
-const DRINK_TYPES: ReadonlySet<string> = new Set(['coffee_machine', 'water_dispenser']);
+/**
+ * Where a drink with an empty hand works. The coffee machine only brews (REQ-INT-003, T-1154
+ * retired its one-step drink); the water dispenser keeps the single-step drink.
+ */
+const DRINK_TYPES: ReadonlySet<string> = new Set(['water_dispenser']);
 /** Activities whose end is driven by a timer in `ActivitySim.timers`. */
 const TIMED: ReadonlySet<string> = new Set(['drinking', 'waving', 'brewing']);
 
@@ -102,10 +108,13 @@ type RunningEmote = { endsAt: number; started: Activity };
  *   The facing cone the client uses to pick a prompt target is not checked: range only.
  * - `stand`: a seated employee returns to the seat's stand point with `idle`.
  * - `toggleWork`: switches `sitting` and `working` for a desk occupant only.
- * - `drink` with an empty hand: needs the coffee machine or water dispenser in range;
+ * - `drink` with an empty hand: needs the water dispenser in range and idle or walking;
  *   `drinking` returns to `idle` after `BALANCE.activity.drinkSeconds`.
  * - `drink` while holding a coffee (REQ-INT-003): one sip anywhere, with the same activity
- *   and timer. The sip counts when the timer ends; the last sip clears the item.
+ *   and timer. The sip counts when the timer ends; the last sip clears the item. A seated
+ *   sip (owner decision 2026-11-17) keeps the seat: the employee is `drinking` on the seat
+ *   and goes back to the seated activity it started from (sitting, working or resting).
+ *   Standing up during a seated sip cancels it (nothing is drunk).
  * - `brew` (REQ-INT-003): needs the coffee machine in range, an empty hand, idle or walking
  *   and a free machine. `brewing` lasts `BALANCE.coffee.brewSeconds`, then the employee is
  *   `idle` holding a coffee with `BALANCE.coffee.sips` sips. The machine serves one
@@ -137,6 +146,8 @@ export class ActivitySim {
   /** Start time of each employee's last accepted emote (the minimum-gap clock). */
   private readonly lastEmoteAt = new Map<string, number>();
   private readonly seatIds: ReadonlySet<string>;
+  /** Seated activity each running seated sip returns to (REQ-INT-003). */
+  private readonly sipFrom = new Map<string, SeatedActivity>();
   /** The employee using the coffee machine; the machine is busy while it is `brewing`. */
   private brewer: { id: string; body: ActivityBody } | null = null;
 
@@ -163,6 +174,7 @@ export class ActivitySim {
     this.timers.delete(id);
     this.emotes.delete(id);
     this.lastEmoteAt.delete(id);
+    this.sipFrom.delete(id);
     this.seats.release(id);
     if (this.brewer?.id === id) this.brewer = null;
   }
@@ -171,6 +183,17 @@ export class ActivitySim {
   endEmote(id: string, body: ActivityBody): void {
     this.emotes.delete(id);
     body.emote = '';
+  }
+
+  /**
+   * The seated activity of a body on a seat, also during a seated sip (`drinking` on the
+   * seat); null when it is not seated.
+   */
+  seatedAs(id: string, body: ActivityBody): SeatedActivity | null {
+    const activity = body.activity as Activity;
+    if (isSeated(activity)) return activity;
+    if (activity === 'drinking' && body.seatId !== '') return this.sipFrom.get(id) ?? 'sitting';
+    return null;
   }
 
   /** True while an employee is brewing at the coffee machine. */
@@ -223,10 +246,16 @@ export class ActivitySim {
         return this.set(body, nextActivity(activity, { type: 'toggleWork' }));
       }
       case 'drink': {
-        const holding = body.item === 'coffee';
+        const held = heldOf(body);
+        const holding = held.item === 'coffee';
         const near =
           holding || this.interactables.some((i) => DRINK_TYPES.has(i.type) && inRange(body, i));
-        if (!near || !this.set(body, nextActivity(activity, { type: 'drink' }))) return false;
+        const seated = isSeated(activity) ? activity : null;
+        if (seated && body.seatId === '') return false;
+        if (!near || !this.set(body, nextActivity(activity, { type: 'drink' }, held.item))) {
+          return false;
+        }
+        if (seated) this.sipFrom.set(id, seated);
         this.timers.set(id, nowMs + BALANCE.activity.drinkSeconds * 1000);
         return true;
       }
@@ -259,12 +288,17 @@ export class ActivitySim {
     }
   }
 
-  /** Frees the seat and puts a seated body at the seat's stand point with `idle`. */
+  /**
+   * Frees the seat and puts a seated body at the seat's stand point with `idle`. A running
+   * seated sip is cancelled and drinks nothing.
+   */
   standUp(id: string, body: ActivityBody): boolean {
-    const activity = body.activity as Activity;
-    if (!isSeated(activity)) return false;
+    const activity = this.seatedAs(id, body);
+    if (activity === null) return false;
     const spot = this.spots.get(body.seatId);
     this.seats.release(id);
+    this.sipFrom.delete(id);
+    this.timers.delete(id);
     if (spot) {
       body.x = spot.standPoint[0];
       body.z = spot.standPoint[2];
@@ -284,11 +318,18 @@ export class ActivitySim {
       const body = bodies.get(id);
       if (!body || !TIMED.has(body.activity)) {
         this.timers.delete(id);
+        this.sipFrom.delete(id);
       } else if (nowMs >= endsAt) {
         this.timers.delete(id);
         const activity = body.activity as Activity;
-        const event =
-          activity === 'brewing' ? { type: 'brewDone' as const } : { type: 'actionDone' as const };
+        const resume = this.sipFrom.get(id);
+        this.sipFrom.delete(id);
+        const event: ActivityEvent =
+          activity === 'brewing'
+            ? { type: 'brewDone' }
+            : resume
+              ? { type: 'actionDone', resume }
+              : { type: 'actionDone' };
         setHeld(body, nextHeld(activity, heldOf(body), event));
         body.activity = nextActivity(activity, event);
         if (this.brewer?.id === id) this.brewer = null;
@@ -388,7 +429,7 @@ export class OfficeSim {
       if (input) {
         const moving = input.forward !== 0 || input.right !== 0;
         if (moving) this.activity.endEmote(id, body);
-        if (isSeated(body.activity as Activity)) {
+        if (this.activity.seatedAs(id, body) !== null) {
           if (moving) {
             this.activity.standUp(id, body);
             stepBody(body, input, colliders);
