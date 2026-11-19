@@ -13,7 +13,7 @@ afterEach(() => {
 
 const UAL = [
   'Idle_Loop',
-  'Walk_Loop',
+  'Walk_Formal_Loop',
   'Sitting_Enter',
   'Sitting_Exit',
   'Sitting_Idle_Loop',

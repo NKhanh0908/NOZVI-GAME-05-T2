@@ -73,6 +73,8 @@ export function aimBone(
   bone.parent!.getWorldQuaternion(tmpParent).invert();
   bone.quaternion.copy(world.premultiply(tmpParent));
   if (weight < 1) bone.quaternion.copy(tmpBase.slerp(bone.quaternion, weight));
+  // Repeated products drift off unit length, which shows up as a small rotation in angleTo.
+  bone.quaternion.normalize();
   bone.updateWorldMatrix(false, true);
 }
 
