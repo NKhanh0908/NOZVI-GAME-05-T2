@@ -44,6 +44,8 @@ Phase 4.1 UI tokens (T-1159): `apps/web/src/ui/tokens.css` is the only place col
 
 Phase 4.1 avatar overlays (T-1219): `apps/web/src/game/avatar/overlays.ts` holds procedural bone overlays applied by `AvatarView.update` after the mixer (`findRig`, `aimBone`, `applyTyping` while `working`, `applyBrew` while `brewing` (T-1611); seated placement in `AvatarView.placeOnSeat` with `applySeatedLegs` and `applyRestHands`, `reachTwoBone` (T-1614); tunables `BALANCE.avatar`). Tests: `apps/web/test/avatarClips.test.ts`, `seatedPose.test.ts`, e2e `typing.spec.ts`, `visual.spec.ts`.
 
+Avatar look (FEAT-143): `apps/web/src/game/avatar/stance.ts` (office stance overlay, relaxed finger tracks, cup grip; applied in `AvatarView.update`, which restores the clip pose before the mixer) and `avatar/look.ts` (load-time smoothed normals, roughness, brow / eye tone, called from `AvatarView` `loadTemplate` before `mergeSkinned`); tunables `BALANCE.avatar.stance`, `hands`, `look`. Tests: `apps/web/test/avatarStance.test.ts`, `avatarLook.test.ts`.
+
 Decor (T-1158): data `packages/protocol/src/layout/office-decor.json` (`officeDecor`, `decor.ts`), placements `apps/web/src/game/assets/decorPlacements.ts` (loaded with the furniture in `Game.ts`), procedural clock `apps/web/src/game/wallClock.ts` (dev hook `getClock`). Tests: `apps/web/test/decor.test.ts`.
 
 Room shell details (T-1151): `apps/web/src/game/roomDetails.ts` (window frames + glass, skirting, ceiling seams, sign, door headers, procedural air conditioner), called from `room.ts` `buildRoom`; door models via `FURNITURE` in `furnitureManifest.ts`; shell windows parsed into `OfficeLayout.windows` (`packages/protocol` layout). Tests: `apps/web/test/roomDetails.test.ts`, `room.test.ts`.

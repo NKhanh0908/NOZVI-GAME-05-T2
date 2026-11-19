@@ -18,6 +18,7 @@ import {
   type PropLoader,
   type PropState,
 } from './HeldProp';
+import { softenAvatar, softenMaterial } from './look';
 import { mergeSkinnedMeshes } from './mergeSkinned';
 import { findSkinnedMesh, retargetClipFromRestPose } from './retarget';
 import type { SeatKind } from '../interaction/seats';
@@ -35,10 +36,19 @@ import {
   type OverlayEmote,
   type Rig,
 } from './overlays';
+import {
+  applyGrip,
+  applyStance,
+  fingerPose,
+  isFingerBone,
+  measureStance,
+  relaxFingers,
+  type StanceRest,
+} from './stance';
 
 export const CLIP_FOR: Record<Activity, { clip: string; loop: boolean }> = {
   idle: { clip: 'Idle_Loop', loop: true },
-  walking: { clip: 'Walk_Loop', loop: true },
+  walking: { clip: 'Walk_Formal_Loop', loop: true }, // FEAT-143: office walk.
   sitting: { clip: 'Sitting_Idle_Loop', loop: true },
   working: { clip: 'Sitting_Idle_Loop', loop: true }, // Typing overlay on top (T-1219).
   resting: { clip: 'Sitting_Idle_Loop', loop: true },
@@ -59,6 +69,14 @@ export const EMOTE_SOURCE: Record<EmoteId, { clip: string } | { overlay: 'wave' 
     laugh: { overlay: 'laugh' },
     stretch: { overlay: 'stretch' },
   };
+/**
+ * FEAT-143: clips whose UAL fists are replaced by relaxed open hands (`relaxFingers`); the
+ * office stance overlay (`stance.ts`) runs over the standing ones.
+ */
+const RELAXED_CLIPS = new Set([CLIP_FOR.idle.clip, CLIP_FOR.walking.clip]);
+/** Standing still (not seated): the stance overlay lowers the arms and narrows the feet. */
+const STANDING: ReadonlySet<Activity> = new Set(['idle', 'waving', 'brewing', 'drinking']);
+
 const emoteClip = (e: EmoteId | '') => {
   const source = e ? EMOTE_SOURCE[e] : null;
   return source && 'clip' in source ? source.clip : null;
@@ -85,7 +103,13 @@ function loadUal() {
  * foot height. The seat offset moves the first onto `BALANCE.avatar.sit`.
  */
 export type SitMeasure = { hipForward: number; hipHeight: number; footY: number };
-type Template = { scene: THREE.Object3D; clips: THREE.AnimationClip[]; sit: SitMeasure };
+type Template = {
+  scene: THREE.Object3D;
+  clips: THREE.AnimationClip[];
+  sit: SitMeasure;
+  /** FEAT-143: the UAL fist (first frame of the idle clip), per finger bone, for the cup grip. */
+  fist: Map<string, THREE.Quaternion>;
+};
 
 const SEATED_CLIP = 'Sitting_Idle_Loop';
 
@@ -128,9 +152,15 @@ async function loadTemplate(avatarId: AvatarId): Promise<Template> {
       .concat('Sitting_Enter', 'Sitting_Exit')
       .concat(Object.values(EMOTE_SOURCE).flatMap((e) => ('clip' in e ? [e.clip] : []))),
   );
-  const clips = ual.clips
+  const retargeted = ual.clips
     .filter((c) => names.has(c.name))
     .map((c) => retargetClipFromRestPose(target, ual.mesh, c, avatarId === 'women_suit'));
+  const idle = retargeted.find((c) => c.name === CLIP_FOR.idle.clip);
+  const fist = idle ? fingerPose(idle) : new Map<string, THREE.Quaternion>();
+  const { curl } = BALANCE.avatar.hands;
+  const clips = retargeted.map((c) =>
+    RELAXED_CLIPS.has(c.name) ? relaxFingers(c, target.skeleton.bones, curl) : c,
+  );
   gltf.scene.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) o.castShadow = true;
     // The exported skin bounds do not follow animated bones (also disabled in the PoC).
@@ -138,8 +168,43 @@ async function loadTemplate(avatarId: AvatarId): Promise<Template> {
   });
   // T-1161: one skinned mesh per avatar (1 draw call per pass instead of 10); the parts share
   // one skeleton and differ only in colour. Unmergeable assets stay as they are.
+  // FEAT-143: smooth shading and a softer face, before the parts are merged.
+  softenAvatar(gltf.scene);
   mergeSkinnedMeshes(gltf.scene);
-  return { scene: gltf.scene, clips, sit: measureSit(gltf.scene, target, clips) };
+  gltf.scene.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      softenMaterial(m);
+  });
+  return { scene: gltf.scene, clips, sit: measureSit(gltf.scene, target, clips), fist };
+}
+
+/**
+ * Local position and rotation of each bone, saved after the mixer and put back before it.
+ * Saving also renormalizes the rotations: a single-key track (the relaxed fingers) hands
+ * its float32 values to the bone unchanged, slightly off unit length.
+ */
+class ClipPose {
+  private readonly saved: { p: THREE.Vector3; q: THREE.Quaternion }[];
+  private valid = false;
+  constructor(private readonly bones: THREE.Bone[]) {
+    this.saved = bones.map(() => ({ p: new THREE.Vector3(), q: new THREE.Quaternion() }));
+  }
+  save(): void {
+    this.bones.forEach((b, i) => {
+      this.saved[i]!.p.copy(b.position);
+      this.saved[i]!.q.copy(b.quaternion.normalize());
+    });
+    this.valid = true;
+  }
+  restore(): void {
+    if (!this.valid) return;
+    this.bones.forEach((b, i) => {
+      b.position.copy(this.saved[i]!.p);
+      b.quaternion.copy(this.saved[i]!.q);
+    });
+  }
 }
 
 export class AvatarView {
@@ -175,6 +240,15 @@ export class AvatarView {
   private sitWeight = 0;
   /** Blend weight of the hands resting on the thighs, 0 to 1 (T-1614). */
   private restWeight = 0;
+  /** FEAT-143: rest pose the office stance returns to, and its blend weights (0 to 1). */
+  private readonly stance: StanceRest;
+  private stanceWeight = 0;
+  private headWeight = 0;
+  /** FEAT-143: right-hand finger bones and their fist pose; `gripWeight` closes them. */
+  private readonly grip: { bone: THREE.Bone; fist: THREE.Quaternion }[];
+  private gripWeight = 0;
+  /** The pose the mixer left, before the overlays (FEAT-143). */
+  private readonly clipPose: ClipPose;
 
   private constructor(
     private readonly model: THREE.Object3D,
@@ -183,9 +257,19 @@ export class AvatarView {
     private readonly materials: THREE.Material[] = [],
     loadProp?: PropLoader,
     private readonly sit: SitMeasure | null = null,
+    fist: Map<string, THREE.Quaternion> = new Map(),
   ) {
     this.root.add(model);
     this.rig = findRig(bones);
+    this.clipPose = new ClipPose(bones);
+    // Measured before the mixer first runs, while the clone is still in its bind pose.
+    this.stance = measureStance(this.root, this.rig, bones);
+    this.grip = bones.flatMap((bone) => {
+      const pose = fist.get(bone.name);
+      return pose && isFingerBone(bone.name) && bone.name.endsWith('R')
+        ? [{ bone, fist: pose }]
+        : [];
+    });
     this.prop = new HeldProp(
       this.root,
       this.rig.right?.hand ?? null,
@@ -215,7 +299,7 @@ export class AvatarView {
         if (templates.get(avatarId) === template) templates.delete(avatarId);
       });
     }
-    const { scene, clips, sit } = await template;
+    const { scene, clips, sit, fist } = await template;
     const model = cloneSkinned(scene);
     const materials: THREE.Material[] = [];
     model.traverse((o) => {
@@ -229,7 +313,15 @@ export class AvatarView {
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
     });
     const target = findSkinnedMesh(model)!;
-    return new AvatarView(model, target.skeleton.bones, clips, materials, options.loadProp, sit);
+    return new AvatarView(
+      model,
+      target.skeleton.bones,
+      clips,
+      materials,
+      options.loadProp,
+      sit,
+      fist,
+    );
   }
 
   /** Test hook: forgets cached templates so the next load parses the GLB again. */
@@ -346,10 +438,31 @@ export class AvatarView {
   }
 
   update(dt: number): void {
+    // The mixer writes a bone only when its clip value changed since the last frame (constant
+    // finger tracks, held keys), so last frame's overlays would stay on those bones. Put back
+    // the clip pose first, so every overlay below starts from the clip each frame (FEAT-143).
+    this.clipPose.restore();
     this.mixer.update(dt);
+    this.clipPose.save();
     this.clock += dt;
     const fade = BALANCE.activity.crossFadeSeconds;
     this.placeOnSeat(dt);
+    // FEAT-143: office stance while standing; the head stays level standing and walking.
+    // A clip emote (dance) plays as it is.
+    const free = !this.seated && emoteClip(this.emote) === null;
+    const standing = free && STANDING.has(this.activity) ? 1 : 0;
+    const level = free && (standing === 1 || this.activity === 'walking') ? 1 : 0;
+    this.stanceWeight = approach(this.stanceWeight, standing, dt, fade);
+    this.headWeight = approach(this.headWeight, level, dt, fade);
+    // The right hand closes around a cup it holds (open, relaxed fingers otherwise).
+    const holding = propFor(this.item, this.activity) !== null && this.propHeld() ? 1 : 0;
+    this.gripWeight = approach(this.gripWeight, holding, dt, fade);
+    applyStance(this.root, this.rig, this.stance, this.current?.time ?? 0, {
+      body: this.stanceWeight,
+      head: this.headWeight,
+      hold: this.gripWeight,
+    });
+    applyGrip(this.grip, this.gripWeight * BALANCE.avatar.hands.grip);
     // T-1614: seated and not working, the hands rest on the thighs; typing, emotes and the
     // sip below take the arms over.
     const resting = this.seated && this.activity !== 'working' && this.emote === '' ? 1 : 0;
@@ -420,6 +533,19 @@ export class AvatarView {
     this.model.updateWorldMatrix(false, true);
     const floor = this.root.getWorldPosition(new THREE.Vector3()).y + sit.footY;
     applySeatedLegs(this.root, this.rig, floor, w);
+  }
+
+  /** Whether a prop would be in the hand now (not on its rest spot, not stowed). */
+  private propHeld(): boolean {
+    return (
+      propRest(this.seated, this.activity, this.restSpot) === null &&
+      propInHand(this.activity, this.emote, this.overlay !== null)
+    );
+  }
+
+  /** FEAT-143 blend weights (0 to 1); tests read them. */
+  get stanceBlend(): { body: number; head: number; grip: number } {
+    return { body: this.stanceWeight, head: this.headWeight, grip: this.gripWeight };
   }
 
   private updateProp(): void {

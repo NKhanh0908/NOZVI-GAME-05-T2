@@ -74,6 +74,48 @@ export const BALANCE = {
       thighAlong: 0.4,
       thighLift: 0.08,
     },
+    /**
+     * FEAT-143 office stance (`avatar/stance.ts`) over the standing clip: the feet move to
+     * `footSpread` x the rest-pose foot spread with `stagger` of the clip's front-to-back
+     * offset, the hips rise `hipLift` of the way back to the rest height, the arms hang down
+     * `armOut` to the side with the elbows `elbowBend` forward (the right one `holdBend` while
+     * it holds a cup), swaying `armSway` at `swayHz`. Standing and walking, the head is
+     * levelled to the rest pose; standing, it looks around by `lookAround` rad at `lookHz`.
+     * Angles in radians, rates in Hz on the clip's time: 0.4 Hz is once per `Idle_Loop`
+     * (2.5 s), so the motion loops with the clip.
+     */
+    stance: {
+      footSpread: 1.15,
+      stagger: 0.25,
+      hipLift: 0.8,
+      armOut: 0.15,
+      elbowBend: 0.18,
+      holdBend: 0.9,
+      armSway: 0.03,
+      swayHz: 0.4,
+      lookAround: 0.05,
+      lookHz: 0.4,
+    },
+    /**
+     * FEAT-143 hands: the standing and walking clips' finger tracks become one pose `curl`
+     * of the way from the open rest pose to the UAL fist; holding a cup in the hand, the right
+     * fingers close `grip` of the way to the fist again.
+     */
+    hands: { curl: 0.2, grip: 0.85 },
+    /**
+     * FEAT-143 load-time look (`avatar/look.ts`): smoothed normals with edges sharper than
+     * `creaseAngle` (rad) kept hard, material roughness at least `roughness`; brows flattened
+     * to `browFlatten` of their height, lifted `browLift` m and `browFade` of the way to the
+     * skin colour; eyes `eyeOpen` times taller.
+     */
+    look: {
+      creaseAngle: 1.2,
+      roughness: 0.6,
+      browFlatten: 0.6,
+      browLift: 0.003,
+      browFade: 0.3,
+      eyeOpen: 1.15,
+    },
     /** REQ-AVATAR-004 emote overlays (T-1222); angles in radians, rates in Hz. */
     emote: {
       think: { headNod: 0.3 },
