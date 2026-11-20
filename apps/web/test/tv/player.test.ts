@@ -169,6 +169,28 @@ describe('YouTubeTvPlayer play waits for cued (T-1612, YouTube error 2)', () => 
     expect(api.playVideo).not.toHaveBeenCalled();
   });
 
+  // Seen in real Chrome: cueing the next video makes the old one report `paused` before the
+  // new one is cued; that state used to count as the new video's start, so held seeks and
+  // rates reached the iframe while the new video was still loading (IFrame error 5).
+  it('a playing or paused state before the new video is cued is not its start', async () => {
+    const { p, opts, api } = await readyPlayer();
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    p.load('BBBBBBBBBBB', 0);
+    p.play();
+    p.seek(4);
+    opts.events.onStateChange({ data: YT_STATE.paused });
+    expect(p.isReady()).toBe(false);
+    p.seek(5);
+    expect(api.seekTo).not.toHaveBeenCalled();
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    opts.events.onStateChange({ data: YT_STATE.buffering });
+    expect(api.seekTo).not.toHaveBeenCalled();
+    opts.events.onStateChange({ data: YT_STATE.playing });
+    expect(p.isReady()).toBe(true);
+    expect(api.seekTo).toHaveBeenCalledOnce();
+    expect(api.seekTo).toHaveBeenCalledWith(5, true);
+  });
+
   it('play after the video is cued goes straight to playVideo', async () => {
     const { p, api } = await readyPlayer();
     (api.playVideo as ReturnType<typeof vi.fn>).mockClear();
@@ -449,7 +471,10 @@ async function startedPlayer(start = true) {
   await flush();
   const [{ opts, api }] = yt.players as [(typeof yt.players)[number]];
   opts.events.onReady();
-  if (start) opts.events.onStateChange({ data: YT_STATE.playing });
+  if (start) {
+    opts.events.onStateChange({ data: YT_STATE.cued });
+    opts.events.onStateChange({ data: YT_STATE.playing });
+  }
   const fn = (name: keyof YtPlayer) => api[name] as ReturnType<typeof vi.fn>;
   return { p, opts, api, fn, logged };
 }
@@ -556,6 +581,7 @@ describe('YouTubeTvPlayer T-1405 guards (IFrame error 5)', () => {
     expect(p.supportsRate(1.05)).toBe(false); // not started: rates unknown
     p.setRate(1.05); // refused before the start
     expect(fn('setPlaybackRate')).not.toHaveBeenCalled();
+    opts.events.onStateChange({ data: YT_STATE.cued });
     opts.events.onStateChange({ data: YT_STATE.playing });
     expect(p.supportsRate(1.05)).toBe(true);
     p.setRate(1.05);
@@ -605,10 +631,10 @@ describe('TV debug log (T-1405)', () => {
     expect(logged.find((e) => e.event === 'video started')?.data).toMatchObject({
       availablePlaybackRates: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
     });
-    expect(logged.find((e) => e.event === 'onStateChange')?.data).toEqual({
-      state: 1,
-      name: 'playing',
-    });
+    expect(logged.filter((e) => e.event === 'onStateChange').map((e) => e.data)).toEqual([
+      { state: 5, name: 'cued' },
+      { state: 1, name: 'playing' },
+    ]);
     expect(logged.find((e) => e.event === 'yt.seekTo')?.data).toEqual({
       seconds: 30,
       allowSeekAhead: true,

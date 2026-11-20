@@ -68,6 +68,27 @@ describe('TvScreen (REQ-TV-001)', () => {
     expect(normal.x).toBeCloseTo(1, 9);
   });
 
+  // The televisionModern model is stretched to the tv box; its display face spans x
+  // [-0.334, 0.334] of [-0.342, 0.342] and y [0.078, 0.446] of [0, 0.455]. A smaller video
+  // left the model's light metal face showing beside the picture (owner screenshot).
+  it('covers the display face of the TV model and stays inside it', () => {
+    const tv = officeLayout.items.find((i) => i.id === 'tv')!;
+    const [, boxH, boxW] = tv.size;
+    const bottom = tv.position[1] - boxH / 2;
+    const face = {
+      width: (boxW * 0.668) / 0.684,
+      low: bottom + (boxH * 0.078) / 0.455,
+      high: bottom + (boxH * 0.446) / 0.455,
+    };
+    const pose = tvPose();
+    expect(pose.width).toBeLessThanOrEqual(face.width);
+    expect(pose.width).toBeGreaterThan(face.width - 0.03);
+    expect(pose.position[1] - pose.height / 2).toBeGreaterThanOrEqual(face.low);
+    expect(pose.position[1] + pose.height / 2).toBeLessThanOrEqual(face.high);
+    expect(pose.height).toBeGreaterThan(face.high - face.low - 0.03);
+    expect(pose.position[2]).toBeCloseTo(tv.position[2], 9);
+  });
+
   it('occluder writes depth and clears colour (no blending, alpha 0)', () => {
     const m = new TvScreen().occluder.material as THREE.MeshBasicMaterial;
     expect(m.blending).toBe(THREE.NoBlending);

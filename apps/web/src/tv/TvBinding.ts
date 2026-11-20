@@ -414,9 +414,14 @@ export class TvBinding implements TvControls, TvViewSource {
     else if (cmd.kind === 'rate') {
       if (this.player.supportsRate(cmd.rate)) this.player.setRate(cmd.rate);
       else {
-        // T-1405 / T-1374: the player does not offer the nudge rate; fall back to a seek.
+        // T-1405 / T-1374: the player does not offer the nudge rate; fall back to a seek, but
+        // only beyond the drift target: a seek buffers for about a second, so seeking a
+        // smaller drift creates the next one (seek storm on real YouTube, 0.25 rate steps).
         const expected = this.expected();
-        if (expected !== null) this.player.seek(expected);
+        const drift = expected === null ? 0 : Math.abs(this.player.getTime() - expected);
+        if (expected !== null && drift > BALANCE.tv.driftTargetSeconds) {
+          this.player.seek(expected);
+        }
       }
     }
   }

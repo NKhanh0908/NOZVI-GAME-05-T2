@@ -417,8 +417,10 @@ export class YouTubeTvPlayer implements TvPlayer {
               player.playVideo();
             }
           }
+          // Before the loaded video is cued, playing / paused belong to the previous video
+          // (cueing the next one makes it report paused first).
           const startedNow = e.data === YT_STATE.playing || e.data === YT_STATE.paused;
-          if (startedNow && !this.started) this.onStarted(player);
+          if (startedNow && !this.started && !this.awaitingCue) this.onStarted(player);
         },
       },
     });

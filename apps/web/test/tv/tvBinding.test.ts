@@ -564,15 +564,32 @@ describe('TvBinding player readiness and rate fallback (T-1405)', () => {
     expect(seek).not.toHaveBeenCalled();
   });
 
-  it('falls back to a seek when the player does not offer the nudge rate', () => {
+  // Real YouTube lists only 0.25 steps, so every nudge took this path; each fallback seek
+  // buffered for 0.6-1.3 s and caused the next one (seek storm seen in real Chrome).
+  it('without the nudge rate, a drift within the drift target is left alone', () => {
     const h = harness();
     const r = fakeRoom();
     h.binding.attach(r.room);
     h.player.supportedRates = [];
     r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
     h.advance(1000);
-    // 1 s behind: a nudge-band drift.
-    h.player.seek(h.player.getTime() - 1);
+    h.player.seek(h.player.getTime() - 0.8);
+    const setRate = vi.spyOn(h.player, 'setRate');
+    const seek = vi.spyOn(h.player, 'seek');
+    h.advance(3000);
+    expect(setRate).not.toHaveBeenCalled();
+    expect(seek).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a seek when the player does not offer the nudge rate', () => {
+    const h = harness();
+    const r = fakeRoom();
+    h.binding.attach(r.room);
+    h.player.supportedRates = [];
+    r.patch({ videoId: ID_A, status: 'playing', currentTime: 0, updatedAt: h.server() });
+    h.advance(3000);
+    // 1.5 s behind: a nudge-band drift beyond the drift target.
+    h.player.seek(h.player.getTime() - 1.5);
     const setRate = vi.spyOn(h.player, 'setRate');
     const seek = vi.spyOn(h.player, 'seek');
     h.advance(1000);

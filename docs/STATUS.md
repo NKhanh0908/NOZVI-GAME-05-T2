@@ -31,6 +31,8 @@ Authority: `PRD/` (requirements), `except/` (visual reference), `docs/ARCHITECTU
 4. Phase 3 leftovers: T-1035 parked until deployment. The draw-call budget is closed (T-1161, T-1162, DECISIONS 2026-11-18): avatar parts merged into one skinned mesh and a blob shadow for remote avatars, 2 calls per remote avatar; ten employees 285 -> 105 calls and 149.5k -> 90.0k triangles (under the 120k target), no LOD needed.
 5. The owner's raw Kenney zips were removed from `dev` and `kenney/` is gitignored; the owner confirmed this on 2026-11-19 (DECISIONS). The source stays in git history at `6c15589`.
 
+6. 2026-11-20, branch `fix/tv-play-and-screen` (owner screenshot `PRD/error.png`): TV videos failing with IFrame error 5 and the picture not filling the TV. Reproduced in real Chrome on the owner's machine (the same calls in a bare page play fine): a stale `paused` from the previous video counted as the new video's start, and the seek-only rate fallback seeked almost every second (YouTube has only 0.25 rate steps). Fixed with the screen resized to the model's display face (CHANGELOG). `pnpm check` passes (protocol 157, server 125, web 456); real Chrome plays three catalog videos in a row without an error. Error 5 itself was not reproduced on a clean Chrome profile; owner check open: retry in the owner's browser, and if error 5 returns, paste `copy(JSON.stringify(window.__tvLog, null, 1))`.
+
 ## Open items
 
 - OQ-025: no confirmed embed-blocked video id, so the live TV error check is open (simulated codes are tested); oEmbed 401 identifies embed-blocked ids.
