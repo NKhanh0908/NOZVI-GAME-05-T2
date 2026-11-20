@@ -1,6 +1,6 @@
 # Research — real-time text chat (2-minute expiry) and voice chat
 
-> Status: Research only, 2026-11-19 (Claude Code, owner request). Nothing here is approved or planned. Both features change approved scope and need an owner decision before any plan or Meridian task (AGENTS.md §5).
+> Status: Research, 2026-11-19 (Claude Code, owner request). Text chat (§2) was approved on 2026-11-19 with a 1-minute expiry and room-state transport: see `docs/plans/phase-4.2.md`, which supersedes §2 where they differ. Voice chat (§3) is not approved or planned. Both features change approved scope and need an owner decision before any plan or Meridian task (AGENTS.md §5).
 
 ## 1. Scope position today
 
