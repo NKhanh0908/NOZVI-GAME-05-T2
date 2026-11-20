@@ -38,6 +38,7 @@ jobs:
           git remote add upstream "$UPSTREAM"
           git remote add mine "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch -q upstream '+refs/heads/*:refs/remotes/upstream/*' --tags
+          dev_before=$(git ls-remote mine refs/heads/dev | cut -f1)
           failed=""
           for ref in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/upstream); do
             [ "$ref" = "HEAD" ] && continue
@@ -50,6 +51,22 @@ jobs:
           done
           git push -q mine --tags || failed="${failed} (tags)"
           echo "failed=${failed}" >> "$GITHUB_ENV"
+          dev_after=$(git ls-remote mine refs/heads/dev | cut -f1)
+          [ "$dev_before" != "$dev_after" ] && echo "dev_changed=1" >> "$GITHUB_ENV" || true
+
+      # vercel.json turns Vercel's Git deploys off (upstream deploys through its own
+      # workflow), so a new dev commit here redeploys the web client with a Deploy Hook.
+      # Render deploys dev on its own (Auto-Deploy On Commit).
+      - name: Redeploy the web client on Vercel
+        if: env.dev_changed == '1'
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "VERCEL_DEPLOY_HOOK_URL not set; skipped."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null && echo "Vercel deploy triggered"
 
       # The mirrored ci.yml / deploy.yml belong to upstream: keep them off here (Actions
       # minutes; deploy secrets do not exist here). Runs the pushes started are cancelled.
