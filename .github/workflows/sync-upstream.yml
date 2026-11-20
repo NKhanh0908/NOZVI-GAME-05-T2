@@ -1,0 +1,54 @@
+# Copies every branch and tag of the upstream repository into this one.
+# Fast-forward only: a branch with its own commits here is reported, never overwritten.
+# Needs the SYNC_TOKEN secret (fine-grained token for this repository with Contents and
+# Workflows read/write), because GITHUB_TOKEN may not push changes to workflow files.
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/nozvi-studio/NOZVI-GAME-05-T2.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Mirror upstream branches and tags
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::Secret SYNC_TOKEN is not set."
+            exit 1
+          fi
+          git init -q mirror && cd mirror
+          git config --global credential.helper ''
+          git remote add upstream "$UPSTREAM"
+          git remote add mine "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q upstream '+refs/heads/*:refs/remotes/upstream/*' --tags
+          failed=""
+          for ref in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/upstream); do
+            [ "$ref" = "HEAD" ] && continue
+            [ "$ref" = "sync-upstream" ] && continue
+            if git push -q mine "refs/remotes/upstream/${ref}:refs/heads/${ref}"; then
+              echo "synced ${ref}"
+            else
+              failed="${failed} ${ref}"
+            fi
+          done
+          git push -q mine --tags || failed="${failed} (tags)"
+          if [ -n "$failed" ]; then
+            echo "::error::Not synced (diverged here):${failed}"
+            exit 1
+          fi
