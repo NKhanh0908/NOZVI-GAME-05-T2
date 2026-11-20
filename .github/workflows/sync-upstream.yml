@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: sync-upstream
@@ -48,6 +49,27 @@ jobs:
             fi
           done
           git push -q mine --tags || failed="${failed} (tags)"
+          echo "failed=${failed}" >> "$GITHUB_ENV"
+
+      # The mirrored ci.yml / deploy.yml belong to upstream: keep them off here (Actions
+      # minutes; deploy secrets do not exist here). Runs the pushes started are cancelled.
+      - name: Keep upstream CI and deploy workflows off
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sleep 10
+          for wf in ci.yml deploy.yml; do
+            gh workflow disable "$wf" 2>/dev/null && echo "disabled ${wf}" || true
+          done
+          for id in $(gh run list --limit 50 --json databaseId,workflowName,status \
+              --jq '.[] | select(.workflowName != "sync-upstream") | select(.status != "completed") | .databaseId'); do
+            gh run cancel "$id" || true
+          done
+
+      - name: Report
+        run: |
           if [ -n "$failed" ]; then
             echo "::error::Not synced (diverged here):${failed}"
             exit 1
